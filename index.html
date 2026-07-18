@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Wayfarer">
+<meta name="theme-color" content="#FFFFFF">
+<title>Wayfarer</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<style>
+:root{
+  --green:#00AA6C;         /* primary action */
+  --green-bright:#34E0A1;  /* highlights, in-range */
+  --green-soft:#E8F7F1;    /* tinted fills */
+  --ink:#1A1A1A;           /* near-black text */
+  --grey:#6B7280;          /* secondary text */
+  --line:#E5E7EB;          /* borders */
+  --bg:#FFFFFF;
+  --bg-soft:#F7F7F7;
+  --amber:#F2B203;         /* rare tier */
+  --shadow:0 2px 10px rgba(0,0,0,.08);
+  --shadow-lg:0 8px 30px rgba(0,0,0,.14);
+  --r:14px;                /* corner radius */
+  --body:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bot:env(safe-area-inset-bottom,0px);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+body{
+  font-family:var(--body);
+  background:var(--bg);color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+  user-select:none;-webkit-user-select:none;
+}
+#app{position:fixed;inset:0;display:flex;flex-direction:column}
+
+/* ---------- Views ---------- */
+.view{position:absolute;inset:0;display:none;flex-direction:column;padding-top:var(--safe-top)}
+.view.active{display:flex}
+
+/* ---------- Map ---------- */
+#map{position:absolute;inset:0;background:#F2F0EC}
+.maplibregl-ctrl-attrib{
+  background:rgba(255,255,255,.85)!important;
+  font-size:9px!important;color:#9CA3AF;
+}
+.maplibregl-ctrl-attrib a{color:var(--green)!important}
+.maplibregl-ctrl-group{border-radius:12px!important;box-shadow:var(--shadow)!important;overflow:hidden}
+
+/* floating map buttons: right edge, below the compass, clear of the drawer */
+.maplibregl-ctrl-top-right{top:calc(var(--safe-top) + 112px)}
+.fab{
+  position:absolute;right:11px;top:calc(var(--safe-top) + 170px);z-index:600;
+  width:46px;height:46px;border-radius:50%;border:none;cursor:pointer;
+  background:#fff;color:var(--ink);font-size:20px;
+  box-shadow:var(--shadow-lg);
+  display:grid;place-items:center;
+  transition:transform .12s,color .12s;
+}
+.fab:active{transform:scale(.92)}
+.fab.following{color:var(--green)}
+#legendBtn{top:calc(var(--safe-top) + 224px);font-size:17px}
+#addPoi{top:calc(var(--safe-top) + 278px);color:var(--green);font-size:22px}
+body.placing #legendBtn,body.placing #locate,body.placing #addPoi,
+body.placing .near,body.placing .strip{display:none}
+
+/* placement crosshair: fixed at map centre, pin tip on the exact point */
+#crosshair{
+  position:absolute;left:50%;top:50%;z-index:650;
+  transform:translate(-50%,-50%);pointer-events:none;
+  display:grid;place-items:center;
+}
+#crosshair[hidden]{display:none}
+.ch-pin{font-size:38px;transform:translateY(-19px);filter:drop-shadow(0 3px 5px rgba(0,0,0,.25))}
+.ch-dot{
+  position:absolute;width:8px;height:8px;border-radius:50%;
+  background:var(--green);border:2px solid #fff;box-shadow:var(--shadow);
+}
+.placebar{
+  position:absolute;left:14px;right:14px;bottom:calc(var(--safe-bot) + 90px);z-index:660;
+  background:#fff;border-radius:var(--r);box-shadow:var(--shadow-lg);
+  padding:14px;
+}
+.placebar[hidden]{display:none}
+.placebar-txt{font-size:13px;font-weight:600;color:var(--grey);text-align:center;margin-bottom:11px}
+.placebar-btns{display:flex;gap:10px}
+.placebar-btns .btn{flex:1;padding:12px}
+
+/* legend rows */
+.lg{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.lg:last-child{border-bottom:none}
+.lg em{
+  font-style:normal;font-size:18px;flex:none;
+  width:38px;height:38px;display:grid;place-items:center;
+  background:var(--bg-soft);border-radius:50%;
+  border:2px solid #fff;box-shadow:var(--shadow);
+}
+.lg div{flex:1;min-width:0}
+.lg b{display:block;font-size:13.5px;font-weight:700}
+.lg small{font-size:11.5px;color:var(--grey)}
+
+/* POI markers */
+.poi-wrap{display:flex;flex-direction:column;align-items:center;cursor:pointer}
+.poi-pin{
+  width:36px;height:36px;display:grid;place-items:center;
+  border-radius:50%;
+  border:2px solid #fff;
+  background:#fff;
+  box-shadow:var(--shadow);
+  font-size:16px;line-height:1;
+  transition:transform .25s cubic-bezier(.34,1.56,.64,1),border-color .2s;
+}
+.poi-label{
+  margin-top:3px;max-width:110px;
+  font-size:10.5px;font-weight:700;line-height:1.15;text-align:center;
+  color:#37475A;
+  text-shadow:0 1px 0 #fff,0 -1px 0 #fff,1px 0 0 #fff,-1px 0 0 #fff,0 1px 3px rgba(255,255,255,.9);
+  display:none;
+}
+.lbl-on .poi-label{display:block}
+.poi-pin.collected{background:var(--green-soft);border-color:var(--green)}
+.poi-pin.collected::after{
+  content:'✓';position:absolute;right:-3px;bottom:-3px;
+  width:14px;height:14px;border-radius:50%;
+  display:grid;place-items:center;
+  font-size:9px;font-weight:700;color:#fff;
+  background:var(--green);border:1.5px solid #fff;
+}
+/* PokemonGo-style: the marker itself grows and glows when you can interact */
+.poi-pin.in-range{
+  transform:scale(1.55);
+  border-color:var(--green);
+  animation:beacon 1.8s ease-in-out infinite;
+}
+@keyframes beacon{
+  0%,100%{box-shadow:var(--shadow),0 0 0 0 rgba(0,170,108,.45)}
+  50%{box-shadow:var(--shadow),0 0 0 9px rgba(0,170,108,0)}
+}
+.me-dot{
+  width:16px;height:16px;border-radius:50%;
+  background:#1A73E8;border:3px solid #fff;
+  box-shadow:0 0 0 6px rgba(26,115,232,.15),var(--shadow);
+}
+
+/* ---------- Top bar ---------- */
+.topbar{
+  position:relative;z-index:600;
+  margin:10px 14px 0;padding:12px 16px;
+  display:flex;align-items:center;gap:14px;
+  background:#fff;
+  border-radius:var(--r);
+  box-shadow:var(--shadow-lg);
+}
+.wordmark{
+  font-weight:800;font-size:19px;letter-spacing:-.02em;
+  color:var(--ink);flex:1;
+}
+.wordmark span{color:var(--green)}
+.stat{text-align:right;line-height:1.15}
+.stat b{
+  display:block;font-size:17px;font-weight:800;color:var(--ink);
+}
+.stat i{
+  font-style:normal;font-size:10px;font-weight:600;
+  color:var(--grey);
+}
+
+/* status strip */
+.strip{
+  position:relative;z-index:600;margin:8px 14px 0;
+  padding:9px 14px;border-radius:999px;
+  font-size:12.5px;font-weight:600;
+  display:flex;align-items:center;gap:8px;
+  background:#fff;box-shadow:var(--shadow);
+  color:var(--grey);
+  width:fit-content;max-width:calc(100% - 28px);
+}
+.strip .led{
+  width:8px;height:8px;border-radius:50%;background:var(--grey);
+  flex:none;
+}
+.strip.offline .led{background:#E5484D}
+.strip.ready{color:var(--green);}
+.strip.ready .led{background:var(--green-bright);animation:beacon 1.6s infinite}
+
+/* ---------- Nearby drawer ---------- */
+.near{
+  position:relative;z-index:600;margin:auto 14px 10px;
+  display:flex;flex-direction:column;gap:8px;
+  pointer-events:none;          /* the container is a ghost… */
+}
+.near > *{pointer-events:auto}  /* …only its cards are solid */
+.near-handle{
+  align-self:center;
+  display:flex;align-items:center;gap:8px;
+  padding:8px 16px;cursor:pointer;
+  background:#fff;box-shadow:var(--shadow-lg);
+  border-radius:999px;
+  font-size:12.5px;font-weight:600;color:var(--grey);
+  max-width:88vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.near-handle b{color:var(--ink);font-weight:700}
+.near-handle.hot{color:var(--green)}
+.near-handle.hot b{color:var(--green)}
+.near-handle .chev{font-size:9px;opacity:.7}
+.nr{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 14px;cursor:pointer;
+  background:#fff;box-shadow:var(--shadow-lg);
+  border-radius:var(--r);
+  transition:transform .12s;
+}
+.nr:active{transform:scale(.985)}
+.nr em{
+  font-style:normal;font-size:18px;flex:none;
+  width:40px;height:40px;display:grid;place-items:center;
+  background:var(--bg-soft);border-radius:12px;
+}
+.nr div{flex:1;min-width:0}
+.nr b{
+  display:block;font-size:14.5px;font-weight:700;color:var(--ink);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.nr small{font-size:11.5px;font-weight:500;color:var(--grey)}
+.nr .go{
+  font-size:12px;font-weight:700;padding:8px 14px;flex:none;
+  border-radius:999px;color:var(--grey);background:var(--bg-soft);
+}
+.nr.live .go{background:var(--green);color:#fff}
+.nr.live em{background:var(--green-soft)}
+.nr.live small{color:var(--green);font-weight:600}
+.nr.got em{opacity:.65}
+
+/* ---------- Bottom nav ---------- */
+.nav{
+  position:relative;z-index:600;margin-top:0;
+  display:flex;
+  padding:8px 10px calc(var(--safe-bot) + 8px);
+  gap:4px;
+  background:#fff;
+  border-top:1px solid var(--line);
+}
+.nav button{
+  flex:1;padding:8px 0 6px;
+  background:none;border:none;border-radius:12px;
+  color:var(--grey);font-family:var(--body);
+  font-size:10.5px;font-weight:600;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  cursor:pointer;transition:color .16s;
+}
+.nav button em{font-style:normal;font-size:20px;line-height:1}
+.nav button.on{color:var(--green)}
+
+/* map view nav floats over map, needs its own card look */
+#v-map .nav{border-top:none;background:#fff;box-shadow:0 -2px 12px rgba(0,0,0,.07)}
+
+/* ---------- Passport / sheets ---------- */
+.sheet{
+  flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  background:var(--bg-soft);
+  color:var(--ink);
+  padding:20px 16px 30px;
+}
+.sheet-head{
+  padding-bottom:4px;margin-bottom:16px;
+}
+.sheet-head h1{
+  font-size:27px;font-weight:800;letter-spacing:-.02em;margin-bottom:3px;
+}
+.sheet-head p{font-size:13px;font-weight:500;color:var(--grey)}
+.tally{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:10px;margin-bottom:22px;
+}
+.tally div{
+  background:#fff;padding:14px 6px;text-align:center;
+  border-radius:var(--r);box-shadow:var(--shadow);
+}
+.tally b{display:block;font-size:23px;font-weight:800;color:var(--ink)}
+.tally i{font-style:normal;font-size:10px;font-weight:600;color:var(--grey)}
+.grp{
+  font-size:15px;font-weight:800;color:var(--ink);
+  display:flex;align-items:center;gap:10px;margin:24px 0 12px;
+}
+.grp::after{content:'';flex:1;height:1px;background:var(--line)}
+.stamps{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px}
+
+/* collected item card */
+.stamp{
+  aspect-ratio:1;position:relative;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:6px;padding:8px 6px;cursor:pointer;
+  background:#fff;border-radius:var(--r);
+  box-shadow:var(--shadow);
+  transition:transform .12s;
+}
+.stamp:active{transform:scale(.96)}
+.stamp .gl{font-size:27px;line-height:1}
+.stamp .nm{
+  font-size:10px;font-weight:600;text-align:center;line-height:1.3;
+  color:var(--ink);max-width:100%;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  overflow:hidden;
+}
+.stamp .ct{
+  position:absolute;top:6px;right:7px;
+  font-size:10px;font-weight:700;color:var(--grey);
+}
+.stamp.rare{
+  background:linear-gradient(135deg,#FFF8E6,#fff 60%);
+  box-shadow:0 2px 10px rgba(242,178,3,.25);
+}
+.stamp.rare::before{
+  content:'★';position:absolute;top:5px;left:7px;
+  font-size:11px;color:var(--amber);
+}
+.blank{
+  display:grid;place-items:center;padding:52px 22px;text-align:center;
+  color:var(--grey);
+}
+.blank em{font-style:normal;font-size:40px;display:block;margin-bottom:14px;opacity:.5}
+.blank h3{font-size:17px;font-weight:800;margin-bottom:7px;color:var(--ink)}
+.blank p{font-size:13px;line-height:1.55;max-width:260px}
+
+/* ---------- Modal ---------- */
+.scrim{
+  position:fixed;inset:0;z-index:2000;
+  background:rgba(17,17,17,.45);
+  display:none;align-items:flex-end;justify-content:center;
+}
+.scrim.open{display:flex}
+.card{
+  width:100%;max-width:460px;
+  background:#fff;color:var(--ink);
+  border-radius:20px 20px 0 0;
+  padding:14px 20px calc(var(--safe-bot) + 22px);
+  max-height:92vh;overflow-y:auto;
+  animation:rise .3s cubic-bezier(.16,1,.3,1);
+  box-shadow:var(--shadow-lg);
+}
+@keyframes rise{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.grab{width:38px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 18px}
+.card h2{
+  font-size:21px;font-weight:800;letter-spacing:-.01em;
+  line-height:1.25;margin-bottom:4px;
+}
+.kicker{
+  font-size:12px;font-weight:600;color:var(--grey);
+  margin-bottom:16px;
+}
+
+/* ---------- The spin dial ---------- */
+.dial-wrap{
+  position:relative;width:236px;height:236px;margin:6px auto 20px;
+  touch-action:none;
+}
+.dial-ring{
+  position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(from 0deg,#0B8A5C,#34E0A1 15%,#0B8A5C 32%,#2BC98D 50%,#087750 66%,#34E0A1 84%,#0B8A5C);
+  box-shadow:
+    inset 0 0 0 2px rgba(0,0,0,.12),
+    inset 0 3px 10px rgba(255,255,255,.35),
+    var(--shadow-lg);
+}
+.dial-ring::after{
+  content:'';position:absolute;inset:15px;border-radius:50%;
+  background:radial-gradient(circle at 42% 34%,#FFFFFF,#F1F5F3 74%);
+  box-shadow:inset 0 3px 12px rgba(0,0,0,.10);
+}
+.notches{position:absolute;inset:0;border-radius:50%;pointer-events:none}
+.notch{
+  position:absolute;left:50%;top:2px;width:1.5px;height:8px;
+  background:rgba(255,255,255,.55);transform-origin:50% 116px;
+}
+.notch.card-pt{height:13px;width:2.5px;background:rgba(255,255,255,.9)}
+.dial-face{
+  position:absolute;inset:15px;border-radius:50%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:6px;pointer-events:none;
+}
+.dial-face .needle{
+  font-size:33px;line-height:1;
+  filter:drop-shadow(0 2px 4px rgba(0,0,0,.2));
+  transition:transform .1s linear;
+}
+.dial-face .lbl{
+  font-size:11px;font-weight:700;color:var(--green);
+  text-align:center;padding:0 22px;line-height:1.45;
+}
+.dial-prog{
+  position:absolute;inset:0;border-radius:50%;pointer-events:none;
+  transform:rotate(-90deg);
+}
+.dial-prog circle{
+  fill:none;stroke:var(--green-bright);stroke-width:4;
+  stroke-linecap:round;
+  filter:drop-shadow(0 0 5px rgba(52,224,161,.7));
+  transition:stroke-dashoffset .06s linear;
+}
+.dial-wrap.done .dial-ring{animation:seat .45s cubic-bezier(.34,1.56,.64,1)}
+@keyframes seat{
+  0%{transform:scale(1)}
+  40%{transform:scale(1.05)}
+  100%{transform:scale(1)}
+}
+
+/* reveal */
+.reveal{text-align:center;padding:8px 0 4px;animation:press .5s cubic-bezier(.16,1,.3,1)}
+@keyframes press{
+  0%{opacity:0;transform:scale(1.4)}
+  55%{opacity:1;transform:scale(.96)}
+  100%{opacity:1;transform:scale(1)}
+}
+.wax{
+  width:116px;height:116px;margin:0 auto 16px;
+  display:grid;place-items:center;font-size:49px;
+  border-radius:50%;
+  background:linear-gradient(135deg,#FFF8E6,#FDEBB8);
+  box-shadow:0 6px 22px rgba(242,178,3,.35);
+  position:relative;
+}
+.wax::after{
+  content:'';position:absolute;inset:8px;border-radius:50%;
+  border:2px dashed rgba(242,178,3,.5);
+}
+.wax.common{
+  background:linear-gradient(135deg,var(--green-soft),#D4F2E6);
+  box-shadow:0 6px 22px rgba(0,170,108,.25);
+}
+.wax.common::after{border-color:rgba(0,170,108,.35)}
+.tier{
+  display:inline-block;
+  font-size:11px;font-weight:700;
+  padding:5px 13px;margin-bottom:11px;
+  border-radius:999px;color:var(--green);background:var(--green-soft);
+}
+.tier.rare{color:#B98700;background:#FFF4D6}
+.reveal h3{font-size:20px;font-weight:800;margin-bottom:7px}
+.reveal p{font-size:13.5px;line-height:1.6;color:var(--grey);max-width:290px;margin:0 auto}
+
+/* buttons */
+.btn{
+  width:100%;padding:15px;margin-top:14px;
+  border:none;border-radius:999px;cursor:pointer;
+  font-family:var(--body);font-size:14.5px;font-weight:700;
+  background:var(--ink);color:#fff;
+  transition:opacity .16s,transform .12s;
+}
+.btn:active{opacity:.85;transform:scale(.985)}
+.btn.ghost{background:#fff;color:var(--ink);border:1.5px solid var(--ink)}
+.btn.seal{background:var(--green);color:#fff}
+.btn:disabled{opacity:.35;cursor:default}
+
+/* dispatch form */
+.field{margin-bottom:13px}
+.field label{
+  display:block;font-size:12px;font-weight:700;color:var(--ink);
+  margin-bottom:6px;
+}
+.field textarea,.field input[type=text]{
+  width:100%;padding:12px;
+  border:1.5px solid var(--line);border-radius:12px;
+  background:#fff;color:var(--ink);
+  font-family:var(--body);font-size:16px;line-height:1.5;
+  resize:none;
+}
+.field textarea:focus,.field input:focus{outline:none;border-color:var(--green)}
+.shot{
+  width:100%;padding:26px;border:1.5px dashed var(--line);border-radius:12px;
+  background:var(--bg-soft);color:var(--grey);
+  font-size:12.5px;font-weight:600;
+  cursor:pointer;text-align:center;
+}
+.shot img{
+  width:100%;border-radius:10px;display:block;
+  max-height:190px;object-fit:cover;
+}
+.note{
+  padding:12px 14px;border-radius:12px;
+  background:var(--green-soft);
+  font-size:13px;line-height:1.55;color:#0A6B47;
+  margin-bottom:14px;
+}
+
+/* about section */
+.about{margin:4px 0 14px}
+.about-img{
+  width:100%;max-height:180px;object-fit:cover;
+  border-radius:12px;margin:8px 0 10px;display:block;
+}
+.about-txt{font-size:13.5px;line-height:1.65;color:var(--ink)}
+.about-txt.muted{color:var(--grey);font-size:12.5px}
+.linkrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.linkbtn{
+  display:inline-block;padding:9px 15px;border-radius:999px;
+  background:var(--bg-soft);color:var(--green);
+  font-size:12.5px;font-weight:700;text-decoration:none;
+}
+.linkbtn:active{opacity:.75}
+
+/* dispatch log inside detail */
+.disp{border-top:1px solid var(--line);padding:13px 0}
+.disp time{
+  display:block;font-size:11px;font-weight:600;color:var(--grey);
+  margin-bottom:6px;
+}
+.disp p{font-size:14px;line-height:1.6}
+.disp img{width:100%;border-radius:10px;margin-top:9px;display:block}
+
+/* toast */
+#toast{
+  position:fixed;left:50%;bottom:calc(var(--safe-bot) + 92px);
+  transform:translate(-50%,26px);z-index:3000;
+  padding:12px 20px;border-radius:999px;
+  background:var(--ink);color:#fff;
+  font-size:13px;font-weight:600;
+  box-shadow:var(--shadow-lg);
+  opacity:0;pointer-events:none;transition:all .28s cubic-bezier(.16,1,.3,1);
+  max-width:86vw;text-align:center;
+}
+#toast.up{opacity:1;transform:translate(-50%,0)}
+
+/* sync list */
+.rows{display:flex;flex-direction:column;gap:10px}
+.row{
+  background:#fff;padding:14px;
+  display:flex;align-items:center;gap:12px;
+  border-radius:var(--r);box-shadow:var(--shadow);
+}
+.row em{
+  font-style:normal;font-size:19px;
+  width:42px;height:42px;display:grid;place-items:center;
+  background:var(--bg-soft);border-radius:12px;flex:none;
+}
+.row div{flex:1}
+.row b{display:block;font-size:14.5px;font-weight:700}
+.row small{font-size:11.5px;font-weight:500;color:var(--grey)}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ MAP ============ -->
+  <section class="view active" id="v-map">
+    <div id="map"></div>
+    <div class="topbar">
+      <div class="wordmark">Way<span>farer</span></div>
+      <div class="stat"><b id="k-stamp">0</b><i>Stamps</i></div>
+      <div class="stat"><b id="k-place">0</b><i>Places</i></div>
+    </div>
+    <div class="strip" id="strip"><span class="led"></span><span id="strip-t">Locating…</span></div>
+    <button class="fab" id="addPoi" aria-label="Add place">✚</button>
+    <button class="fab" id="legendBtn" aria-label="Legend">❖</button>
+    <button class="fab" id="locate" aria-label="Recentre">◉</button>
+    <div id="crosshair" hidden><span class="ch-pin">📍</span><span class="ch-dot"></span></div>
+    <div class="placebar" id="placebar" hidden>
+      <div class="placebar-txt">Move the map until the pin sits exactly on the spot</div>
+      <div class="placebar-btns">
+        <button class="btn ghost" id="placeCancel" style="margin-top:0">Cancel</button>
+        <button class="btn seal" id="placeHere" style="margin-top:0">Place here</button>
+      </div>
+    </div>
+    <div class="near" id="near"></div>
+    <nav class="nav">
+      <button class="on" data-go="v-map"><em>◎</em>Field</button>
+      <button data-go="v-book"><em>❑</em>Passport</button>
+      <button data-go="v-sync"><em>⇅</em>Sync</button>
+    </nav>
+  </section>
+
+  <!-- ============ PASSPORT ============ -->
+  <section class="view" id="v-book">
+    <div class="sheet">
+      <div class="sheet-head">
+        <h1>Passport</h1>
+        <p id="book-sub">No entries</p>
+      </div>
+      <div class="tally">
+        <div><b id="t-stamp">0</b><i>Stamps</i></div>
+        <div><b id="t-rare">0</b><i>Rare</i></div>
+        <div><b id="t-disp">0</b><i>Dispatches</i></div>
+      </div>
+      <div id="book-body"></div>
+    </div>
+    <nav class="nav">
+      <button data-go="v-map"><em>◎</em>Field</button>
+      <button class="on" data-go="v-book"><em>❑</em>Passport</button>
+      <button data-go="v-sync"><em>⇅</em>Sync</button>
+    </nav>
+  </section>
+
+  <!-- ============ SYNC ============ -->
+  <section class="view" id="v-sync">
+    <div class="sheet">
+      <div class="sheet-head">
+        <h1>Sync</h1>
+        <p>Cache regions before you fly</p>
+      </div>
+      <div class="note">
+        Wayfarer runs with no signal. Cache a region while you have data, then the map, the places, and every spin work offline. Entries queue and upload when you reconnect.
+      </div>
+      <div class="grp">Regions</div>
+      <div class="rows" id="regions"></div>
+      <div class="grp">Local store</div>
+      <div class="rows">
+        <div class="row"><em>◉</em><div><b id="s-poi">0 places cached</b><small id="s-net">Checking…</small></div></div>
+        <div class="row"><em>⇅</em><div><b id="s-q">0 entries queued</b><small>Uploads when online</small></div></div>
+      </div>
+      <button class="btn ghost" id="wipe">Erase all local data</button>
+    </div>
+    <nav class="nav">
+      <button data-go="v-map"><em>◎</em>Field</button>
+      <button data-go="v-book"><em>❑</em>Passport</button>
+      <button class="on" data-go="v-sync"><em>⇅</em>Sync</button>
+    </nav>
+  </section>
+
+</div>
+
+<div class="scrim" id="scrim"><div class="card" id="card"></div></div>
+<div id="toast"></div>
+
+<script src="vendor/maplibre-gl.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
