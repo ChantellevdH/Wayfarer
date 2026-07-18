@@ -103,7 +103,8 @@ body.placing .near,body.placing .strip{display:none}
 }
 .lg div{flex:1;min-width:0}
 .lg b{display:block;font-size:13.5px;font-weight:700}
-.lg small{font-size:11.5px;color:var(--grey)}
+.lg small{display:block;font-size:11.5px;color:var(--grey);line-height:1.45}
+.lg small b{display:inline;font-size:11.5px;color:var(--ink)}
 
 /* POI markers */
 .poi-wrap{display:flex;flex-direction:column;align-items:center;cursor:pointer}
@@ -336,6 +337,7 @@ body.placing .near,body.placing .strip{display:none}
 }
 .scrim.open{display:flex}
 .card{
+  will-change:transform;
   width:100%;max-width:460px;
   background:#fff;color:var(--ink);
   border-radius:20px 20px 0 0;
@@ -486,6 +488,14 @@ body.placing .near,body.placing .strip{display:none}
   background:var(--green-soft);
   font-size:13px;line-height:1.55;color:#0A6B47;
   margin-bottom:14px;
+}
+
+/* hero image */
+.hero{margin:-4px 0 12px}
+.hero:empty{display:none}
+.hero img{
+  width:100%;height:172px;object-fit:cover;display:block;
+  border-radius:14px;background:var(--bg-soft);
 }
 
 /* about section */

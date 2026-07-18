@@ -22,19 +22,38 @@ const REGIONS = [
 /* Each place gets a deterministic momento derived from its type + name,
    so the same beach always yields the same stamp. Rares are earned. */
 const KINDS = [
-  {cat:'Beaches & coast',        test:/beach|plage|bay|lagoon|coast/i,   gl:'🐚', com:'Shell',      rare:'Tide-worn Conch',   line:'Picked from the wrack line.'},
-  {cat:'Peaks & koppies',        test:/mount|peak|morne|hill|summit|koppie/i, gl:'🪨', com:'Summit Stone',rare:'Basalt Core',  line:'Chipped from the ridge.'},
-  {cat:'Waterfalls',             test:/water\s?fall|cascade|chute/i,     gl:'💧', com:'Spray Vial',  rare:'Cataract Glass',   line:'Bottled from the plunge.'},
-  {cat:'Places of worship',      test:/temple|church|mosque|shrine|kovil|worship|cathedral|synagogue/i,gl:'🕯',com:'Votive',rare:'Brass Bell',line:'Left burning at the step.'},
-  {cat:'Museums & monuments',    test:/museum|gallery|fort|ruin|monument|memorial|statue|sculpture|artwork|archaeolog|castle|heritage/i,gl:'🗝',com:'Iron Key',rare:'Wax Cylinder',line:'Lifted from the archive.'},
-  {cat:'Markets',                test:/market|bazaar|marché/i,           gl:'🧂', com:'Spice Twist', rare:'Saffron Thread',   line:'Traded at the stall.'},
-  {cat:'Casinos & theatres',     test:/casino|theatre|cinema/i,          gl:'🎟', com:'Ticket Stub', rare:'Gilded Ticket',    line:'Torn at the door.'},
-  {cat:'Stadiums & circuits',    test:/stadium|arena|circuit|versfeld/i, gl:'🏁', com:'Match Ticket',rare:'Paddock Pass',     line:'Kept from the stands.'},
-  {cat:'Malls & squares',        test:/mall|shopping|centre|square/i,    gl:'🪙', com:'Minted Token',rare:'Proof Coin',       line:'Struck on the spot.'},
-  {cat:'Parks & nature',         test:/garden|park|botanic|reserve|forest|zoo|aquarium/i,gl:'🌿',com:'Pressed Leaf',rare:'Orchid Cutting',line:'Flattened between pages.'},
-  {cat:'Rivers & lakes',         test:/lake|river|dam|gorge|spring/i,    gl:'🪶', com:'River Quill', rare:'Heron Plume',      line:'Caught on the bank.'},
-  {cat:'Lighthouses & lookouts', test:/light\s?house|point|cape|headland|viewpoint|lookout/i,gl:'🔭',com:'Lens Shard',rare:'Fresnel Prism',line:'Prised from the tower.'},
-  {cat:'Everything else',        test:/.*/,                              gl:'🧭', com:'Bearing',     rare:'Sealed Chart',     line:'Marked on the map.'},
+  {cat:'Beaches & coast', desc:'Beaches, bays, and lagoons',
+   test:/beach|plage|bay|lagoon|coast/i, gl:'🐚', com:'Seashell', rare:'Pearl', line:'Picked from the wrack line.'},
+  {cat:'Peaks & koppies', desc:'Mountains, hills, and summits',
+   test:/mount|peak|morne|hill|summit|koppie/i, gl:'🪨', com:'Summit Stone', rare:'Mountain Crystal', line:'Chipped from the ridge.'},
+  {cat:'Waterfalls', desc:'Falls and cascades',
+   test:/water\s?fall|cascade|chute/i, gl:'💧', com:'Waterfall Mist', rare:'Rainbow Droplet', line:'Bottled at the plunge pool.'},
+  {cat:'Rivers & lakes', desc:'Rivers, lakes, dams, and gorges',
+   test:/lake|river|dam|gorge|spring/i, gl:'🪶', com:'River Pebble', rare:'Heron Feather', line:'Found on the bank.'},
+  {cat:'Wildlife & camps', desc:'Game reserves, safari camps, hides, and zoos',
+   test:/game reserve|safari|wildlife|rest camp|lodge|hide|waterhole|zoo|aquarium/i, gl:'🦁', com:'Enamel Mug', rare:'Carved Lion', line:'Kept from the campfire.'},
+  {cat:'Malls & squares', desc:'Shopping centres and public squares',
+   test:/mall|shopping|centre|square/i, gl:'🪙', com:'Souvenir Coin', rare:'Gold Coin', line:'Struck on the spot.'},
+  {cat:'Parks & gardens', desc:'Parks, gardens, forests, and nature reserves',
+   test:/garden|park|botanic|reserve|forest/i, gl:'🌿', com:'Pressed Leaf', rare:'Rare Orchid', line:'Flattened between pages.'},
+  {cat:'Places of worship', desc:'Churches, temples, mosques, and shrines',
+   test:/temple|church|mosque|shrine|kovil|worship|cathedral|synagogue/i, gl:'🕯', com:'Candle', rare:'Brass Bell', line:'Left burning at the step.'},
+  {cat:'Forts & ruins', desc:'Castles, forts, ruins, and ancient sites',
+   test:/fort|ruin|castle|archaeolog|heritage/i, gl:'🏰', com:'Cannonball', rare:"King's Seal", line:'Dug from the ramparts.'},
+  {cat:'Museums & monuments', desc:'Museums, galleries, statues, and memorials',
+   test:/museum|gallery|monument|memorial|statue|sculpture|artwork/i, gl:'🗝', com:'Iron Key', rare:'Golden Key', line:'Lifted from the archive.'},
+  {cat:'Markets', desc:'Markets and bazaars',
+   test:/market|bazaar|marché/i, gl:'🧂', com:'Spice Pouch', rare:'Golden Saffron', line:'Traded at the stall.'},
+  {cat:'Casinos & theatres', desc:'Casinos, theatres, and cinemas',
+   test:/casino|theatre|cinema/i, gl:'🎟', com:'Ticket Stub', rare:'Golden Ticket', line:'Torn at the door.'},
+  {cat:'Stadiums & circuits', desc:'Stadiums, arenas, and race tracks',
+   test:/stadium|arena|circuit|versfeld/i, gl:'🏁', com:'Match Ticket', rare:'VIP Pass', line:'Kept from the stands.'},
+  {cat:'Lighthouses & lookouts', desc:'Lighthouses, viewpoints, and capes',
+   test:/light\s?house|point|cape|headland|viewpoint|lookout/i, gl:'🔭', com:'Spyglass', rare:'Lighthouse Lens', line:'Prised from the tower.'},
+  {cat:'Bridges & towers', desc:'Bridges, towers, and observatories',
+   test:/bridge|tower|obelisk|observator/i, gl:'🌉', com:'Postcard', rare:'Vintage Postcard', line:'Bought at the kiosk.'},
+  {cat:'Everything else', desc:'Anywhere worth standing',
+   test:/.*/, gl:'🧭', com:'Compass', rare:'Treasure Map', line:'Marked on the map.'},
 ];
 
 function kindFor(name, cats){
@@ -704,6 +723,7 @@ function openPlace(p){
 
   card(`
     <div class="grab"></div>
+    <div class="hero" id="hero">${heroImg(p)}</div>
     <div class="kicker">${p.region||'Unmapped'} · ${d===null?'':Math.round(d)+' m away'}</div>
     <h2>${esc(p.name)}</h2>
     ${p.blurb?`<p style="font-size:13.5px;line-height:1.6;color:var(--grey);margin:10px 0 6px">${esc(p.blurb)}</p>`:''}
@@ -721,6 +741,34 @@ function openPlace(p){
   loadAbout(p);
 }
 
+/* The best image we currently hold for a place, as an <img> or nothing. */
+function bestImg(p){
+  return p.img || (p.about && p.about.thumb) || null;
+}
+function heroImg(p){
+  const u = bestImg(p);
+  return u ? `<img src="${esc(u)}" alt="" loading="lazy">` : '';
+}
+function refreshHero(p){
+  const h = document.getElementById('hero');
+  if(h) h.innerHTML = heroImg(p);
+}
+
+/* Last resort: a Wikimedia Commons photo taken near these coordinates.
+   Runs only when nothing else produced an image; the result is stored,
+   and the photo itself is cached by the service worker after first view. */
+async function commonsNearby(p){
+  const u = 'https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch'
+    + `&ggscoord=${p.lat}%7C${p.lng}&ggsradius=250&ggslimit=1&ggsnamespace=6`
+    + '&prop=imageinfo&iiprop=url&iiurlwidth=640&format=json&origin=*';
+  const r = await fetch(u);
+  if(!r.ok) return null;
+  const j = await r.json();
+  const pages = j.query && j.query.pages ? Object.values(j.query.pages) : [];
+  const ii = pages[0] && pages[0].imageinfo && pages[0].imageinfo[0];
+  return ii ? (ii.thumburl || ii.url) : null;
+}
+
 /* ---------- About: read about the place ----------
    Priority: a stored article (offline-safe) → live Wikipedia lookup,
    persisted into the place record on first success → graceful fallbacks.
@@ -735,10 +783,9 @@ function renderAbout(p){
   const el = document.getElementById('about'); if(!el) return;
   const ab = p.about;
   el.innerHTML =
-    (ab && ab.extract ? `
-      ${ab.thumb?`<img class="about-img" src="${esc(ab.thumb)}" alt="">`:''}
-      <p class="about-txt">${esc(ab.extract)}</p>` : '')
+    (ab && ab.extract ? `<p class="about-txt">${esc(ab.extract)}</p>` : '')
     + aboutLinks(p);
+  refreshHero(p);
 }
 async function loadAbout(p){
   const el = document.getElementById('about'); if(!el) return;
@@ -772,10 +819,24 @@ async function loadAbout(p){
       };
       await DB.put('poi', p);   // readable offline from now on
       renderAbout(p);
+      refreshHero(p);
+      if(!bestImg(p)) tryCommonsImg(p);
       return;
     }catch(e){ break; }
   }
   el.innerHTML = `<p class="about-txt muted">No article found for this place.</p>` + aboutLinks(p);
+  if(!bestImg(p)) tryCommonsImg(p);
+}
+
+async function tryCommonsImg(p){
+  if(!navigator.onLine) return;
+  try{
+    const u = await commonsNearby(p);
+    if(!u) return;
+    p.img = u;
+    await DB.put('poi', p);
+    refreshHero(p);
+  }catch(e){}
 }
 function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
@@ -1057,6 +1118,9 @@ out center 700;`;
       cats,
       wiki: t.wikipedia || undefined,
       url: t.website || t['contact:website'] || undefined,
+      img: (t.image && /^https?:/.test(t.image)) ? t.image
+         : t.wikimedia_commons ? 'https://commons.wikimedia.org/wiki/Special:FilePath/'+encodeURIComponent(t.wikimedia_commons.replace(/^File:/,''))+'?width=640'
+         : undefined,
     };
   }).filter(Boolean);
 }
@@ -1082,7 +1146,7 @@ function mergePOIs(seeds, wiki, osm){
 async function fetchWikidata(r){
   const [s,w,n,e] = r.bbox;
   const q = `
-SELECT DISTINCT ?item ?itemLabel ?coord ?desc ?article ?website WHERE {
+SELECT DISTINCT ?item ?itemLabel ?coord ?desc ?article ?website ?img WHERE {
   SERVICE wikibase:box {
     ?item wdt:P625 ?coord .
     bd:serviceParam wikibase:cornerSouthWest "Point(${w} ${s})"^^geo:wktLiteral .
@@ -1098,6 +1162,7 @@ SELECT DISTINCT ?item ?itemLabel ?coord ?desc ?article ?website WHERE {
   OPTIONAL { ?item schema:description ?desc . FILTER(LANG(?desc)="en") }
   OPTIONAL { ?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> . }
   OPTIONAL { ?item wdt:P856 ?website . }
+  OPTIONAL { ?item wdt:P18 ?img . }
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en" . }
 }
 LIMIT 220`;
@@ -1124,6 +1189,7 @@ LIMIT 220`;
       cats: [],
       wiki: wiki || undefined,
       url: b.website ? b.website.value : undefined,
+      img: b.img ? b.img.value.replace(/^http:/,'https:')+'?width=640' : undefined,
     };
   }).filter(Boolean);
 }
@@ -1195,7 +1261,8 @@ function showLegend(){
         <em>${k.gl}</em>
         <div>
           <b>${k.cat}</b>
-          <small>Collects: ${k.com} · Rare: ${k.rare}</small>
+          <small>${k.desc}</small>
+          <small>Collect a <b>${k.com}</b> · return &amp; dispatch for the <b>★ ${k.rare}</b></small>
         </div>
       </div>`).join('')}
     </div>
@@ -1287,9 +1354,10 @@ function placeForm(lat, lng){
 /* A keyword that reliably routes a place into the chosen category. */
 function kindKeyword(k){
   const m = {'Beaches & coast':'beach','Peaks & koppies':'peak','Waterfalls':'waterfall',
-    'Places of worship':'temple','Museums & monuments':'monument','Markets':'market',
-    'Parks & nature':'park','Rivers & lakes':'river','Lighthouses & lookouts':'lighthouse',
-    'Casinos & theatres':'theatre','Stadiums & circuits':'stadium','Malls & squares':'mall',
+    'Rivers & lakes':'river','Wildlife & camps':'safari','Parks & gardens':'park',
+    'Places of worship':'temple','Forts & ruins':'fort','Museums & monuments':'monument',
+    'Markets':'market','Casinos & theatres':'theatre','Stadiums & circuits':'stadium',
+    'Malls & squares':'mall','Lighthouses & lookouts':'lighthouse','Bridges & towers':'bridge',
     'Everything else':''};
   return m[k.cat] ?? '';
 }
@@ -1309,6 +1377,32 @@ async function removePlace(id){
 /* ---------- Nav / modal ---------- */
 function bindNav(){
   $$('[data-go]').forEach(b=> b.onclick = ()=>go(b.dataset.go));
+
+  // Swipe-down closes sheets, like every other bottom sheet on the phone.
+  const cardEl = document.getElementById('card');
+  let sy=null, dy=0, dragging=false;
+  cardEl.addEventListener('touchstart', e=>{
+    if(S.spinning || document.getElementById('ob')) return;
+    if(cardEl.scrollTop > 2) return;              // reading mid-sheet: scroll, don't drag
+    sy = e.touches[0].clientY; dy = 0; dragging = true;
+    cardEl.style.transition = 'none';
+  }, {passive:true});
+  cardEl.addEventListener('touchmove', e=>{
+    if(!dragging || sy===null) return;
+    dy = e.touches[0].clientY - sy;
+    if(dy > 0){
+      cardEl.style.transform = `translateY(${dy}px)`;
+      if(dy > 8) e.preventDefault();              // the sheet has the gesture now
+    }
+  }, {passive:false});
+  cardEl.addEventListener('touchend', ()=>{
+    if(!dragging) return;
+    dragging = false;
+    cardEl.style.transition = 'transform .22s cubic-bezier(.16,1,.3,1)';
+    if(dy > 110){ shut(); }
+    else cardEl.style.transform = '';
+    dy = 0; sy = null;
+  });
 
   // Map buttons live here, not in initMap, so they work even if the map died.
   document.getElementById('legendBtn').onclick = showLegend;
@@ -1340,6 +1434,8 @@ function card(html){
 function shut(){
   S.spinning=false;
   $('#scrim').classList.remove('open');
+  const c = $('#card');
+  c.style.transform = ''; c.style.transition = '';
 }
 
 boot();
