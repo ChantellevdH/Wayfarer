@@ -13,9 +13,16 @@ const REGIONS = [
   {id:'mru',  name:'Mauritius',            icon:'⛱',  bbox:[-20.55,57.28,-19.95,57.82], z:[9,10,11,12,13,14]},
   {id:'kruger',name:'Kruger National Park', icon:'🦁', bbox:[-25.55,30.85,-22.30,32.05], z:[8,9,10,11,12]},
   {id:'jhbn', name:'Johannesburg North',   icon:'⛩',  bbox:[-26.13,27.95,-25.94,28.13], z:[10,11,12,13,14]},
+  {id:'jhb',  name:'Johannesburg',         icon:'◍',  bbox:[-26.35,27.78,-26.00,28.20], z:[10,11,12,13,14]},
+  {id:'east_rand', name:'East Rand',       icon:'✈',  bbox:[-26.40,28.10,-26.05,28.50], z:[10,11,12,13,14]},
+  {id:'west_rand', name:'West Rand',       icon:'⛏',  bbox:[-26.25,27.60,-25.95,27.95], z:[10,11,12,13,14]},
+  {id:'centurion', name:'Centurion & Pretoria West', icon:'🏏', bbox:[-25.95,28.00,-25.70,28.20], z:[10,11,12,13,14]},
   {id:'pta',  name:'Pretoria East',        icon:'🌳', bbox:[-25.92,28.15,-25.72,28.35], z:[10,11,12,13,14]},
   {id:'cpt',  name:'Cape Town',            icon:'⛰',  bbox:[-34.10,18.30,-33.75,18.75], z:[10,11,12,13,14]},
-  {id:'jhb',  name:'Johannesburg',         icon:'◍',  bbox:[-26.35,27.85,-26.00,28.20], z:[10,11,12,13,14]},
+  {id:'randstad', name:'Randstad (Netherlands)', icon:'🌷', bbox:[51.80,3.90,52.50,5.20], z:[9,10,11,12,13]},
+  {id:'dfw',  name:'Dallas–Fort Worth (TX)', icon:'🤠', bbox:[32.55,-97.55,33.10,-96.45], z:[9,10,11,12,13]},
+  {id:'houston', name:'Houston (TX)',      icon:'🚀', bbox:[29.50,-95.75,30.10,-95.00], z:[9,10,11,12,13,14]},
+  {id:'austin', name:'Austin (TX)',        icon:'🎸', bbox:[30.10,-98.05,30.55,-97.55], z:[10,11,12,13,14]},
 ];
 
 /* ---------- Momento vocabulary ---------- */
