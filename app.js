@@ -1498,6 +1498,104 @@ async function removePlace(id){
   toast('Place removed');
 }
 
+/* ---------- Cohort: share and import hand-placed POIs ----------
+   No backend yet: a tester's places travel as a JSON message over
+   WhatsApp or email; the builder imports, curates, and periodically the
+   keepers get baked into the app's bundled places for everyone. */
+
+async function testerName(){
+  const m = (await DB.all('meta')).find(x=>x.k==='tester');
+  return m ? m.v : null;
+}
+
+async function sharePlaces(){
+  const mine = S.pois.filter(p=>p.id.startsWith('user-'));
+  if(!mine.length){ toast('No added places yet — use the green ✚ on the map'); return; }
+
+  let from = await testerName();
+  if(!from){
+    from = (prompt('Your name (so the builder knows whose places these are):')||'').trim();
+    if(!from){ return; }
+    await DB.put('meta',{k:'tester', v:from});
+  }
+
+  const payload = JSON.stringify({
+    wayfarer:1, from, ts:Date.now(),
+    places: mine.map(p=>({name:p.name, lat:p.lat, lng:p.lng,
+      blurb:p.blurb||'', url:p.url||'', cats:p.cats||[]})),
+  });
+
+  if(navigator.share){
+    try{
+      await navigator.share({title:'Wayfarer places from '+from, text:payload});
+      toast('Shared');
+      return;
+    }catch(e){ /* cancelled or unsupported — fall through to copy */ }
+  }
+  card(`
+    <div class="grab"></div>
+    <div class="kicker">${mine.length} place${mine.length===1?'':'s'} from ${esc(from)}</div>
+    <h2>Copy &amp; send this to the builder</h2>
+    <div class="field"><textarea id="shx" rows="6" readonly>${esc(payload)}</textarea></div>
+    <button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('shx').value).then(()=>toast('Copied'))">Copy</button>
+    <button class="btn ghost" onclick="shut()">Close</button>
+  `);
+}
+
+function importPlaces(){
+  const pinField = S.builderOk ? '' : `
+    <div class="field"><label>Builder password</label>
+      <input type="text" id="im-pin" placeholder="Password" autocomplete="off"></div>`;
+  card(`
+    <div class="grab"></div>
+    <div class="kicker">Builder import</div>
+    <h2>Paste a tester's share</h2>
+    <div class="field"><textarea id="im-txt" rows="6" placeholder='{"wayfarer":1,"from":"…"}'></textarea></div>
+    ${pinField}
+    <button class="btn seal" id="im-go">Import</button>
+    <button class="btn ghost" onclick="shut()">Cancel</button>
+  `);
+
+  $('#im-go').onclick = async ()=>{
+    if(!S.builderOk){
+      if((($('#im-pin')||{}).value||'').trim() !== BUILDER_PIN){ toast('Wrong builder password'); return; }
+      S.builderOk = true;
+    }
+    let j;
+    try{ j = JSON.parse($('#im-txt').value.trim()); }
+    catch(e){ toast('That is not a valid share'); return; }
+    if(!j || j.wayfarer!==1 || !Array.isArray(j.places)){ toast('That is not a Wayfarer share'); return; }
+
+    const from = String(j.from||'tester').slice(0,40);
+    let added=0, skipped=0;
+    for(const raw of j.places.slice(0,200)){
+      const name = String(raw.name||'').trim().slice(0,120);
+      const lat = Number(raw.lat), lng = Number(raw.lng);
+      if(name.length<3 || !isFinite(lat) || !isFinite(lng)
+         || Math.abs(lat)>90 || Math.abs(lng)>180){ skipped++; continue; }
+      const dup = S.pois.find(q=> q.name.toLowerCase().trim()===name.toLowerCase()
+         && metres(lat,lng,q.lat,q.lng) < 150);
+      if(dup){ skipped++; continue; }
+      const rgn = REGIONS.find(r=> lat>=r.bbox[0]&&lat<=r.bbox[2]&&lng>=r.bbox[1]&&lng<=r.bbox[3]);
+      let url = String(raw.url||'').trim();
+      if(url && !/^https?:\/\//i.test(url)) url = '';
+      const p = {
+        id:'user-'+uid(), name, lat, lng,
+        blurb: String(raw.blurb||'').trim().slice(0,300),
+        region: rgn ? rgn.name : `From ${from}`,
+        cats: Array.isArray(raw.cats) ? raw.cats.slice(0,3).map(c=>String(c).slice(0,30)) : [],
+        url: url || undefined,
+        addedBy: from,
+      };
+      await DB.put('poi', p);
+      S.pois.push(p);
+      added++;
+    }
+    shut(); paint();
+    toast(`Imported ${added} place${added===1?'':'s'}${skipped?` · ${skipped} skipped (duplicates or invalid)`:''}`);
+  };
+}
+
 /* ---------- Nav / modal ---------- */
 function bindNav(){
   $$('[data-go]').forEach(b=> b.onclick = ()=>go(b.dataset.go));
