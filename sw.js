@@ -1,7 +1,7 @@
 /* Wayfarer service worker — offline app shell + map tile cache */
 
-const SHELL = 'wf-shell-v13';
-const TILES = 'wf-tiles';
+const SHELL = 'wf-shell-v14';
+const TILES = 'wf-tiles-v2';
 
 const CORE = [
   './',
@@ -44,7 +44,7 @@ self.addEventListener('fetch', e=>{
     e.respondWith(
       caches.open(TILES).then(async c=>{
         const hit = await c.match(e.request);
-        if(hit) return hit;
+        if(hit && hit.ok) return hit;   // never serve a stored error or empty
         try{
           const res = await fetch(e.request);
           if(res.ok) c.put(e.request, res.clone());

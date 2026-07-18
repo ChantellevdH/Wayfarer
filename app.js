@@ -286,6 +286,24 @@ async function boot(){
     S.pois = S.pois.concat(fresh);
   }
 
+  // Clean up duplicate pairs left by earlier versions: same name, under
+  // 150 m apart. Priority: seeds > user > Wikidata > OSM points > outlines.
+  {
+    const rank = id => id.startsWith('seed-')?0 : id.startsWith('user-')?1 : /^Q/.test(id)?2 : id.startsWith('osm-node')?3 : 4;
+    const byName = {};
+    S.pois.forEach(p=>{ const k=p.name.toLowerCase().trim(); (byName[k]=byName[k]||[]).push(p); });
+    for(const group of Object.values(byName)){
+      if(group.length<2) continue;
+      group.sort((x,y)=>rank(x.id)-rank(y.id));
+      for(let i=1;i<group.length;i++){
+        if(group.slice(0,i).some(kq=> metres(kq.lat,kq.lng,group[i].lat,group[i].lng)<150)){
+          await DB.del('poi', group[i].id);
+          S.pois = S.pois.filter(x=>x.id!==group[i].id);
+        }
+      }
+    }
+  }
+
   S.stamps = await DB.all('stamp');
   S.disps  = await DB.all('disp');
   S.queue  = await DB.all('queue');
@@ -797,7 +815,7 @@ async function loadAbout(p){
   if(p.about && p.about.extract){ renderAbout(p); return; }
   if(p.id.startsWith('user-')){ renderAbout(p); return; }   // builder places: link only
   if(!navigator.onLine){
-    el.innerHTML = `<p class="about-txt muted">Connect to load the article for this place — it stays readable offline afterwards.</p>` + aboutLinks(p);
+    el.innerHTML = catFallback(p) + `<p class="about-txt muted">Connect to look this place up — articles stay readable offline afterwards.</p>` + aboutLinks(p);
     return;
   }
   el.innerHTML = `<p class="about-txt muted">Looking up this place…</p>` + aboutLinks(p);
@@ -838,8 +856,14 @@ async function loadAbout(p){
       return;
     }catch(e){ break; }
   }
-  el.innerHTML = `<p class="about-txt muted">No article found for this place.</p>` + aboutLinks(p);
+  el.innerHTML = catFallback(p) + aboutLinks(p);
   if(!bestImg(p)) tryCommonsImg(p);
+}
+
+/* The floor of information: what kind of place this is and where. */
+function catFallback(p){
+  const k = kindFor(p.name, p.cats);
+  return `<p class="about-txt muted">${k.gl} ${k.cat} · ${esc(p.region||'Unmapped')}. No article found for this place yet.</p>`;
 }
 
 async function tryCommonsImg(p){
@@ -1065,8 +1089,28 @@ async function cacheRegion(id){
     // centroid, so nodes go first and win the name-dedupe.
     osm = osm.sort((x,y)=> (x.id.startsWith('osm-node')?0:1) - (y.id.startsWith('osm-node')?0:1));
 
-    const pois = mergePOIs(seedFor(r), wiki, osm).filter(p=>!S.hidden.has(p.id));
+    let pois = mergePOIs(seedFor(r), wiki, osm).filter(p=>!S.hidden.has(p.id));
     if(!pois.length){ toast('No places found'); return; }
+
+    // Cross-run dedupe: this region may overlap one cached earlier. Same
+    // name within 150 m of an existing place is the same place — keep the
+    // better anchor (a point beats an area outline).
+    const kept=[];
+    for(const p of pois){
+      const dup = S.pois.find(q=> q.id!==p.id
+        && q.name.toLowerCase().trim()===p.name.toLowerCase().trim()
+        && metres(p.lat,p.lng,q.lat,q.lng) < 150);
+      if(!dup){ kept.push(p); continue; }
+      const pIsNode = p.id.startsWith('osm-node'), dupProtected = /^(seed-|user-|Q)/.test(dup.id);
+      if(pIsNode && !dupProtected && !dup.id.startsWith('osm-node')){
+        await DB.del('poi', dup.id);
+        S.pois = S.pois.filter(x=>x.id!==dup.id);
+        if(S.marks[dup.id]){ S.marks[dup.id].remove(); delete S.marks[dup.id]; }
+        kept.push(p);
+      } // otherwise the existing one stands; drop the incoming twin
+    }
+    pois = kept;
+    if(!pois.length){ toast(`${r.name}: nothing new`); return; }
 
     await DB.putMany('poi',pois);
     // merge into memory
@@ -1137,12 +1181,19 @@ out center 700;`;
     const name = el.tags?.name;
     if(lat==null || lng==null || !name) return null;
     const t = el.tags;
+    // Quality gate: a generic church/fountain/theatre with no photo, no
+    // wiki link, and no description is not a collectible — someone has to
+    // have cared about it. Inherently notable tags (tourism, historic) pass.
+    const lowSignal = ['place_of_worship','fountain','marketplace','arts_centre','theatre'].includes(t.amenity);
+    const hasContext = !!(t.wikipedia || t.wikidata || t.image || t.wikimedia_commons
+      || t.description || t['description:en'] || t.heritage);
+    if(lowSignal && !hasContext && !t.tourism && !t.historic) return null;
     const cats = [t.tourism,t.historic,t.leisure,t.amenity,t.natural,t.man_made]
       .filter(Boolean);
     return {
       id:'osm-'+el.type+'-'+el.id,
       name, lat, lng,
-      blurb: t.description || t['description:en'] || '',
+      blurb: osmBlurb(t),
       region: r.name,
       cats,
       wiki: t.wikipedia || undefined,
@@ -1152,6 +1203,34 @@ out center 700;`;
          : undefined,
     };
   }).filter(Boolean);
+}
+
+/* A human-readable one-liner from raw OSM tags, for places with no prose. */
+function osmBlurb(t){
+  const given = t.description || t['description:en'];
+  if(given) return given;
+  if(t.amenity==='place_of_worship'){
+    const rel = {christian:'church', muslim:'mosque', hindu:'temple',
+                 jewish:'synagogue', buddhist:'temple', sikh:'gurdwara'}[t.religion] || 'place of worship';
+    const den = t.denomination ? t.denomination.replace(/_/g,' ') : '';
+    const s = (den ? den+' ' : '') + rel;
+    return s.charAt(0).toUpperCase()+s.slice(1);
+  }
+  const label = {viewpoint:'Scenic viewpoint', artwork:'Public artwork', museum:'Museum',
+    gallery:'Art gallery', attraction:'Local attraction', zoo:'Zoo', theme_park:'Theme park',
+    aquarium:'Aquarium', fountain:'Fountain', marketplace:'Market', arts_centre:'Arts centre',
+    theatre:'Theatre'};
+  if(label[t.tourism]) return label[t.tourism];
+  if(label[t.amenity]) return label[t.amenity];
+  if(t.historic) return 'Historic '+t.historic.replace(/_/g,' ');
+  if(t.leisure==='nature_reserve') return 'Nature reserve';
+  if(t.leisure==='park') return 'Public park';
+  if(t.leisure==='garden') return 'Garden';
+  if(t.leisure==='stadium') return 'Stadium';
+  if(t.natural) return t.natural.charAt(0).toUpperCase()+t.natural.slice(1).replace(/_/g,' ');
+  if(t.man_made==='lighthouse') return 'Lighthouse';
+  if(t.man_made) return t.man_made.charAt(0).toUpperCase()+t.man_made.slice(1).replace(/_/g,' ');
+  return '';
 }
 
 /* Merge sources: seeds are truth, Wikidata adds notability, OSM adds density.
@@ -1229,7 +1308,7 @@ LIMIT 220`;
    serves that same TileJSON so MapLibre asks for exactly the tiles we hold.
    Tiles stop at z14 and MapLibre over-zooms, so z14 covers every deeper zoom. */
 async function cacheTiles(r){
-  const cache = await caches.open('wf-tiles');
+  const cache = await caches.open('wf-tiles-v2');
 
   let tjRes = null;
   for(let i=0;i<3 && !(tjRes && tjRes.ok);i++){
