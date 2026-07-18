@@ -23,15 +23,15 @@ const REGIONS = [
    so the same beach always yields the same stamp. Rares are earned. */
 const KINDS = [
   {cat:'Beaches & coast', desc:'Beaches, bays, and lagoons',
-   test:/beach|plage|bay|lagoon|coast/i, gl:'🐚', com:'Seashell', rare:'Pearl', line:'Picked from the wrack line.'},
+   test:/beach|plage|bay|baie|lagoon|coast|island|île|islet|waterfront/i, gl:'🐚', com:'Seashell', rare:'Pearl', line:'Picked from the wrack line.'},
   {cat:'Peaks & koppies', desc:'Mountains, hills, and summits',
-   test:/mount|peak|morne|hill|summit|koppie/i, gl:'🪨', com:'Summit Stone', rare:'Mountain Crystal', line:'Chipped from the ridge.'},
+   test:/mount|peak|morne|hill|summit|koppie|crater|dune|coloured earths/i, gl:'🪨', com:'Summit Stone', rare:'Mountain Crystal', line:'Chipped from the ridge.'},
   {cat:'Waterfalls', desc:'Falls and cascades',
-   test:/water\s?fall|cascade|chute/i, gl:'💧', com:'Waterfall Mist', rare:'Rainbow Droplet', line:'Bottled at the plunge pool.'},
+   test:/water\s?fall|\bfalls?\b|cascade|chute/i, gl:'💧', com:'Waterfall Mist', rare:'Rainbow Droplet', line:'Bottled at the plunge pool.'},
   {cat:'Rivers & lakes', desc:'Rivers, lakes, dams, and gorges',
-   test:/lake|river|dam|gorge|spring/i, gl:'🪶', com:'River Pebble', rare:'Heron Feather', line:'Found on the bank.'},
+   test:/lake|river|dam|gorge|spring|bassin|talao/i, gl:'🪶', com:'River Pebble', rare:'Heron Feather', line:'Found on the bank.'},
   {cat:'Wildlife & camps', desc:'Game reserves, safari camps, hides, and zoos',
-   test:/game reserve|safari|wildlife|rest camp|lodge|hide|waterhole|zoo|aquarium/i, gl:'🦁', com:'Enamel Mug', rare:'Carved Lion', line:'Kept from the campfire.'},
+   test:/game reserve|safari|wildlife|rest camp|lodge|hide|waterhole|zoo|aquarium|picnic site|\bgate\b|sanctuary/i, gl:'🦁', com:'Enamel Mug', rare:'Carved Lion', line:'Kept from the campfire.'},
   {cat:'Malls & squares', desc:'Shopping centres and public squares',
    test:/mall|shopping|centre|square/i, gl:'🪙', com:'Souvenir Coin', rare:'Gold Coin', line:'Struck on the spot.'},
   {cat:'Parks & gardens', desc:'Parks, gardens, forests, and nature reserves',
@@ -41,7 +41,7 @@ const KINDS = [
   {cat:'Forts & ruins', desc:'Castles, forts, ruins, and ancient sites',
    test:/fort|ruin|castle|archaeolog|heritage/i, gl:'🏰', com:'Cannonball', rare:"King's Seal", line:'Dug from the ramparts.'},
   {cat:'Museums & monuments', desc:'Museums, galleries, statues, and memorials',
-   test:/museum|gallery|monument|memorial|statue|sculpture|artwork/i, gl:'🗝', com:'Iron Key', rare:'Golden Key', line:'Lifted from the archive.'},
+   test:/museum|gallery|monument|memorial|statue|sculpture|artwork|house|homestead|manor|buildings|ghat|depot/i, gl:'🗝', com:'Iron Key', rare:'Golden Key', line:'Lifted from the archive.'},
   {cat:'Markets', desc:'Markets and bazaars',
    test:/market|bazaar|marché/i, gl:'🧂', com:'Spice Pouch', rare:'Golden Saffron', line:'Traded at the stall.'},
   {cat:'Casinos & theatres', desc:'Casinos, theatres, and cinemas',
@@ -49,7 +49,7 @@ const KINDS = [
   {cat:'Stadiums & circuits', desc:'Stadiums, arenas, and race tracks',
    test:/stadium|arena|circuit|versfeld/i, gl:'🏁', com:'Match Ticket', rare:'VIP Pass', line:'Kept from the stands.'},
   {cat:'Lighthouses & lookouts', desc:'Lighthouses, viewpoints, and capes',
-   test:/light\s?house|point|cape|headland|viewpoint|lookout/i, gl:'🔭', com:'Spyglass', rare:'Lighthouse Lens', line:'Prised from the tower.'},
+   test:/light\s?house|point|cape|\bcap\b|headland|viewpoint|lookout/i, gl:'🔭', com:'Spyglass', rare:'Lighthouse Lens', line:'Prised from the tower.'},
   {cat:'Bridges & towers', desc:'Bridges, towers, and observatories',
    test:/bridge|tower|obelisk|observator/i, gl:'🌉', com:'Postcard', rare:'Vintage Postcard', line:'Bought at the kiosk.'},
   {cat:'Everything else', desc:'Anywhere worth standing',
@@ -76,7 +76,7 @@ mru:[
  ['seed-mru-7','Caudan Waterfront',-20.1610,57.4980,'Harbourfront quarter of Port Louis.'],
  ['seed-mru-8','Sir Seewoosagur Ramgoolam Botanical Garden',-20.1044,57.5806,'Pamplemousses garden, famed for giant water lilies.'],
  ['seed-mru-9','Île aux Cerfs',-20.2683,57.7900,'Island off the east coast, ringed by lagoon.'],
- ['seed-mru-10','Trou aux Cerfs',-20.3211,57.5122,'Dormant volcanic crater above Curepipe.'],
+ ['seed-mru-10','Trou aux Cerfs',-20.3211,57.5122,'Dormant volcanic crater above Curepipe.','crater'],
  ['seed-mru-11','Ganga Talao (Grand Bassin)',-20.4183,57.4914,'Crater lake and the island holiest Hindu site.'],
  ['seed-mru-12','Flic en Flac Beach',-20.2747,57.3644,'Long west-coast beach, calm water at dusk.'],
  ['seed-mru-13','Belle Mare Beach',-20.1911,57.7778,'Wide white sand on the east coast.'],
@@ -88,9 +88,9 @@ mru:[
  ['seed-mru-19','Fort Adelaide (La Citadelle)',-20.1594,57.5044,'British fort overlooking Port Louis.'],
  ['seed-mru-20','Eureka House',-20.2408,57.5039,'Creole plantation mansion at Moka.'],
  ['seed-mru-21','Tamarin Bay',-20.3264,57.3703,'Surf break and salt pans on the west coast.'],
- ['seed-mru-22','Le Pouce',-20.1997,57.5272,'Thumb-shaped peak above the central plateau.'],
- ['seed-mru-23','Pieter Both',-20.1933,57.5450,'Peak crowned by a balanced boulder.'],
- ['seed-mru-24','Gris Gris',-20.5169,57.5233,'Cliff and unreefed coast at the southern tip.'],
+ ['seed-mru-22','Le Pouce',-20.1997,57.5272,'Thumb-shaped peak above the central plateau.','peak'],
+ ['seed-mru-23','Pieter Both',-20.1933,57.5450,'Peak crowned by a balanced boulder.','peak'],
+ ['seed-mru-24','Gris Gris',-20.5169,57.5233,'Cliff and unreefed coast at the southern tip.','coast'],
  ['seed-mru-25','Aapravasi Ghat',-20.1586,57.5030,'Immigration depot, a UNESCO World Heritage Site.'],
 ],
 kruger:[
@@ -121,7 +121,7 @@ jhbn:[
  ['seed-jn-3','Kyalami Grand Prix Circuit',-25.9990,28.0690,'The historic home of South African motorsport.'],
  ['seed-jn-4','Riversands Farm Village',-25.9611,28.0117,'Weekend market and farm village north of Steyn City.'],
  ['seed-jn-5','Bryanston Organic Market',-26.0560,28.0330,'Long-running Thursday and Saturday craft market.'],
- ['seed-jn-6','Liliesleaf Farm',-26.0378,28.0570,'Rivonia farmhouse where the ANC high command was arrested in 1963.'],
+ ['seed-jn-6','Liliesleaf Farm',-26.0378,28.0570,'Rivonia farmhouse where the ANC high command was arrested in 1963.','museum'],
  ['seed-jn-7','Sandton City & Nelson Mandela Square',-26.1076,28.0567,'Retail heart of the richest square mile in Africa.'],
  ['seed-jn-8','Delta Park',-26.1230,28.0060,'One of the largest urban parks in the city.'],
  ['seed-jn-9','Mall of Africa',-26.0146,28.1070,'Waterfall City anchor mall in Midrand.'],
@@ -150,9 +150,9 @@ cpt:[
  ['seed-cpt-4','Boulders Beach',-34.1975,18.4508,'Granite boulders and a penguin colony.'],
  ['seed-cpt-5','V&A Waterfront',-33.9036,18.4203,'Working harbour and waterfront quarter.'],
  ['seed-cpt-6','Robben Island',-33.8067,18.3667,'Island prison, now a museum.'],
- ['seed-cpt-7','Lions Head',-33.9356,18.3889,'Peak between Table Mountain and the sea.'],
+ ['seed-cpt-7','Lions Head',-33.9356,18.3889,'Peak between Table Mountain and the sea.','peak'],
  ['seed-cpt-8','Chapmans Peak Drive',-34.0797,18.3597,'Coastal road cut into the cliff.'],
- ['seed-cpt-9','Bo-Kaap',-33.9214,18.4147,'Quarter of painted houses on Signal Hill slope.'],
+ ['seed-cpt-9','Bo-Kaap',-33.9214,18.4147,'Quarter of painted houses on Signal Hill slope.','monument'],
  ['seed-cpt-10','Camps Bay Beach',-33.9508,18.3775,'Beach beneath the Twelve Apostles.'],
  ['seed-cpt-11','Company Gardens',-33.9281,18.4172,'The old VOC vegetable garden in the city.'],
  ['seed-cpt-12','Castle of Good Hope',-33.9256,18.4269,'The oldest surviving colonial building in SA.'],
@@ -160,19 +160,19 @@ cpt:[
 jhb:[
  ['seed-jhb-1','Constitution Hill',-26.1908,28.0428,'Former prison, now the Constitutional Court.'],
  ['seed-jhb-2','Apartheid Museum',-26.2378,28.0086,'Museum on the rise and fall of apartheid.'],
- ['seed-jhb-3','Maboneng Precinct',-26.2044,28.0603,'Regenerated quarter east of the CBD.'],
+ ['seed-jhb-3','Maboneng Precinct',-26.2044,28.0603,'Regenerated quarter east of the CBD.','square'],
  ['seed-jhb-4','Neighbourgoods Market',-26.1994,28.0322,'Saturday market in Braamfontein.'],
  ['seed-jhb-5','Johannesburg Botanical Garden',-26.1594,27.9928,'Garden and dam at Emmarentia.'],
  ['seed-jhb-6','Wits Art Museum',-26.1922,28.0325,'University collection of African art.'],
  ['seed-jhb-7','Carlton Centre',-26.2053,28.0472,'The tallest building in Africa for fifty years.'],
- ['seed-jhb-8','Soweto (Vilakazi Street)',-26.2378,27.9083,'The only street to have housed two Nobel laureates.'],
+ ['seed-jhb-8','Soweto (Vilakazi Street)',-26.2378,27.9083,'The only street to have housed two Nobel laureates.','monument'],
  ['seed-jhb-9','Melville Koppies',-26.1725,27.9994,'Ridge of remnant highveld and Iron Age sites.'],
  ['seed-jhb-10','Zoo Lake',-26.1608,28.0242,'Public lake and park in Parkview.'],
 ]};
 
 function seedFor(r){
-  return (SEED[r.id]||[]).map(([id,name,lat,lng,blurb])=>({
-    id,name,lat,lng,blurb,region:r.name,cats:[]
+  return (SEED[r.id]||[]).map(([id,name,lat,lng,blurb,kw])=>({
+    id,name,lat,lng,blurb,region:r.name,cats:kw?[kw]:[]
   }));
 }
 
@@ -246,7 +246,7 @@ const DB = {
 const S = {
   pois:[], stamps:[], disps:[], queue:[],
   me:null, map:null, meMark:null, marks:{}, cached:{},
-  spinning:false, nearOpen:null,
+  spinning:false, nearOpen:null, hidden:new Set(),
 };
 
 /* ---------- Utils ---------- */
@@ -272,12 +272,15 @@ function fmtDate(ts){
 /* ---------- Boot ---------- */
 async function boot(){
   await DB.open();
-  S.pois   = await DB.all('poi');
+  const meta0 = await DB.all('meta');
+  const hid = meta0.find(m=>m.k==='hidden');
+  S.hidden = new Set(hid ? hid.v : []);
+  S.pois   = (await DB.all('poi')).filter(p=>!S.hidden.has(p.id));
 
   // Merge bundled seeds: plants everything on first run, and quietly adds
   // any new seed places shipped in an update without touching existing data.
   const have = new Set(S.pois.map(p=>p.id));
-  const fresh = REGIONS.flatMap(seedFor).filter(p=>!have.has(p.id));
+  const fresh = REGIONS.flatMap(seedFor).filter(p=>!have.has(p.id) && !S.hidden.has(p.id));
   if(fresh.length){
     await DB.putMany('poi', fresh);
     S.pois = S.pois.concat(fresh);
@@ -730,7 +733,9 @@ function openPlace(p){
     <div id="about" class="about"></div>
     ${mine.length?`<div class="kicker" style="margin-bottom:10px">Visited ${mine.length}× · ${mine.filter(s=>s.tier==='rare').length} rare</div>`:''}
     ${action}
-    ${(p.id.startsWith('user-') && S.builderOk)?`<button class="btn ghost" onclick="removePlace('${p.id}')">Remove this place (builder)</button>`:''}
+    ${S.builderOk?(p.id.startsWith('user-')
+        ?`<button class="btn ghost" onclick="removePlace('${p.id}')">Remove this place (builder)</button>`
+        :`<button class="btn ghost" onclick="hidePlace('${p.id}')">Hide this place (builder)</button>`):''}
     ${logs.length?`<div class="grp" style="margin-top:24px">Dispatches</div>
       ${logs.map(l=>`<div class="disp">
         <time>${fmtDate(l.ts)}</time>
@@ -747,7 +752,7 @@ function bestImg(p){
 }
 function heroImg(p){
   const u = bestImg(p);
-  return u ? `<img src="${esc(u)}" alt="" loading="lazy">` : '';
+  return u ? `<img src="${esc(u)}" alt="" loading="lazy" onerror="this.parentNode.innerHTML=''">` : '';
 }
 function refreshHero(p){
   const h = document.getElementById('hero');
@@ -811,6 +816,15 @@ async function loadAbout(p){
       if(!r.ok) continue;
       const j = await r.json();
       if(!j.extract || (j.type||'').includes('disambiguation')) continue;
+      // A guessed title is only trusted if Wikipedia's own coordinates for the
+      // article sit near this place. Kills "Balloon"-type generic matches:
+      // topic articles have no coordinates and are rejected outright.
+      const trusted = p.wiki && t === p.wiki.replace(/^en:/,'');
+      if(!trusted){
+        const gc = j.coordinates;
+        if(!gc) continue;
+        if(metres(p.lat, p.lng, gc.lat, gc.lon) > 60000) continue;
+      }
       p.about = {
         title: j.title,
         extract: j.extract,
@@ -1044,12 +1058,14 @@ async function cacheRegion(id){
     const [wikiR, osmR] = await Promise.allSettled([fetchWikidata(r), fetchOSM(r)]);
     const wiki = wikiR.status==='fulfilled' ? wikiR.value : [];
     let   osm  = osmR.status==='fulfilled'  ? osmR.value  : [];
+    const problems = [];
+    if(wikiR.status!=='fulfilled') problems.push('Wikidata busy');
+    if(osmR.status!=='fulfilled')  problems.push('OpenStreetMap busy');
     // A named node (statue, gate, artwork) is a better anchor than an area
     // centroid, so nodes go first and win the name-dedupe.
     osm = osm.sort((x,y)=> (x.id.startsWith('osm-node')?0:1) - (y.id.startsWith('osm-node')?0:1));
-    if(!wiki.length && !osm.length) toast('Sources unreachable — using built-in places');
 
-    const pois = mergePOIs(seedFor(r), wiki, osm);
+    const pois = mergePOIs(seedFor(r), wiki, osm).filter(p=>!S.hidden.has(p.id));
     if(!pois.length){ toast('No places found'); return; }
 
     await DB.putMany('poi',pois);
@@ -1063,16 +1079,22 @@ async function cacheRegion(id){
     await DB.put('meta',meta);
     S.cached[id] = meta.v;
 
-    // warm the tiles for this bbox so the map draws offline
+    // warm the tiles for this bbox so the map draws offline —
+    // a tile failure must never mask the places that just saved.
     toast(`${pois.length} places. Caching map…`);
-    await cacheTiles(r);
+    let tilesOk = true;
+    try{ await cacheTiles(r); }catch(e){ tilesOk = false; }
 
     drawRegions();
     paint();
     if(S.map) S.map.fitBounds([[r.bbox[1],r.bbox[0]],[r.bbox[3],r.bbox[2]]],{padding:40});
-    toast(`${r.name} ready offline`);
+
+    let msg = `${r.name}: ${pois.length} places saved`;
+    if(!tilesOk) problems.push('map tiles failed');
+    msg += problems.length ? ` · ${problems.join(', ')} — Refresh to retry` : ' · ready offline';
+    toast(msg);
   }catch(e){
-    toast('Fetch failed — try again');
+    toast('Caching failed — try again');
   }finally{
     S.caching = false;
   }
@@ -1094,12 +1116,19 @@ async function fetchOSM(r){
 );
 out center 700;`;
 
-  const res = await fetch('https://overpass-api.de/api/interpreter',{
-    method:'POST',
-    headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body:'data='+encodeURIComponent(q),
-  });
-  if(!res.ok) throw new Error('overpass '+res.status);
+  // The public Overpass server rate-limits; fall back to a mirror.
+  const eps = ['https://overpass-api.de/api/interpreter',
+               'https://overpass.kumi.systems/api/interpreter'];
+  let res = null;
+  for(const ep of eps){
+    try{
+      res = await fetch(ep,{method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:'data='+encodeURIComponent(q)});
+      if(res.ok) break;
+    }catch(e){ res = null; }
+  }
+  if(!res || !res.ok) throw new Error('overpass unavailable');
   const j = await res.json();
 
   return (j.elements||[]).map(el=>{
@@ -1202,8 +1231,12 @@ LIMIT 220`;
 async function cacheTiles(r){
   const cache = await caches.open('wf-tiles');
 
-  const tjRes = await fetch(OFM_TILEJSON, {cache:'reload'});
-  if(!tjRes.ok) throw new Error('tilejson '+tjRes.status);
+  let tjRes = null;
+  for(let i=0;i<3 && !(tjRes && tjRes.ok);i++){
+    try{ tjRes = await fetch(OFM_TILEJSON, {cache:'reload'}); }catch(e){ tjRes = null; }
+    if(!(tjRes && tjRes.ok)) await new Promise(r=>setTimeout(r,800));
+  }
+  if(!tjRes || !tjRes.ok) throw new Error('tilejson unavailable');
   await cache.put(OFM_TILEJSON, tjRes.clone());
   const tj = await tjRes.json();
   const tpl = tj.tiles[0];
@@ -1360,6 +1393,18 @@ function kindKeyword(k){
     'Malls & squares':'mall','Lighthouses & lookouts':'lighthouse','Bridges & towers':'bridge',
     'Everything else':''};
   return m[k.cat] ?? '';
+}
+
+/* Curation: banish a bad source place from this device. Survives restarts
+   and re-caching. Its stamps (if any) stay in the passport history. */
+async function hidePlace(id){
+  S.hidden.add(id);
+  await DB.put('meta', {k:'hidden', v:[...S.hidden]});
+  await DB.del('poi', id);
+  S.pois = S.pois.filter(p=>p.id!==id);
+  if(S.marks[id]){ S.marks[id].remove(); delete S.marks[id]; }
+  shut(); paint();
+  toast('Place hidden');
 }
 
 async function removePlace(id){
