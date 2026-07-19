@@ -334,6 +334,35 @@ body.placing .searchwrap{display:none}
 .grp::after{content:'';flex:1;height:1px;background:var(--line)}
 .stamps{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px}
 
+/* scratch-off world map */
+.world-card{
+  background:#141B18;border-radius:var(--r);box-shadow:var(--shadow);
+  padding:10px 10px 8px;margin-bottom:16px;
+}
+#worldmap{display:block;width:100%;touch-action:none;border-radius:8px}
+.world-cap{
+  font-size:11px;font-weight:600;color:#9FB4A9;
+  text-align:center;padding-top:7px;
+}
+.world-cap b{color:var(--green-bright)}
+
+/* wishlist */
+.wishrow{display:flex;align-items:center;gap:10px}
+.wishrow .kicker{margin-bottom:0;flex:1}
+.wishbtn{
+  border:none;background:var(--bg-soft);border-radius:999px;
+  padding:7px 13px;font-size:12.5px;font-weight:700;color:var(--grey);
+  cursor:pointer;flex:none;
+}
+.wishbtn.on{background:#FFF1E0;color:#C77800}
+.poi-pin.wish::before{
+  content:'♥';position:absolute;left:-3px;top:-3px;
+  width:14px;height:14px;border-radius:50%;
+  display:grid;place-items:center;
+  font-size:8px;color:#fff;background:var(--amber);
+  border:1.5px solid #fff;
+}
+
 /* collected place card: the place is the stamp, the item is the badge */
 .stamp{
   aspect-ratio:1;position:relative;overflow:hidden;
@@ -648,6 +677,10 @@ body.placing .searchwrap{display:none}
       <div class="sheet-head">
         <h1>Passport</h1>
         <p id="book-sub">No entries</p>
+      </div>
+      <div class="world-card">
+        <canvas id="worldmap"></canvas>
+        <div class="world-cap" id="world-cap">Your world</div>
       </div>
       <div class="tally">
         <div><b id="t-stamp">0</b><i>Stamps</i></div>

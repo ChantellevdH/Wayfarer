@@ -1,6 +1,6 @@
 /* Wayfarer service worker — offline app shell + map tile cache */
 
-const SHELL = 'wf-shell-v21';
+const SHELL = 'wf-shell-v22';
 const TILES = 'wf-tiles-v2';
 
 const CORE = [
@@ -9,6 +9,7 @@ const CORE = [
   './app.js',
   './manifest.json',
   './vendor/maplibre-gl.css',
+  './vendor/world.json',
   './vendor/maplibre-gl.js',
   './icon-180.png',
   './icon-192.png',

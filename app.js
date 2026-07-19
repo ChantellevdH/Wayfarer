@@ -258,7 +258,7 @@ const DB = {
 const S = {
   pois:[], stamps:[], disps:[], queue:[],
   me:null, map:null, meMark:null, marks:{}, cached:{},
-  spinning:false, nearOpen:null, hidden:new Set(), cacheQ:[], cacheRunning:false, prog:{},
+  spinning:false, nearOpen:null, hidden:new Set(), cacheQ:[], cacheRunning:false, prog:{}, wish:new Set(),
 };
 
 /* ---------- Utils ---------- */
@@ -329,6 +329,8 @@ async function boot(){
   }
 
   S.builderOk = (await DB.all('meta')).some(m=>m.k==='builder' && m.v===true);
+  { const wm=(await DB.all('meta')).find(m=>m.k==='wish'); S.wish=new Set(wm?wm.v:[]); }
+  worldLoad();
   S.queue  = await DB.all('queue');
   // The sync outbox has no server yet; stop it growing without bound.
   if(S.queue.length > 800){
@@ -525,7 +527,7 @@ function paintMap(){
     const got  = S.stamps.some(s=>s.poi===p.id);
     const near = S.me && metres(S.me.lat,S.me.lng,p.lat,p.lng) <= effR();
     const landmark = p.id.startsWith('seed-') || /^Q\d+$/.test(p.id);
-    const pinCls = 'poi-pin' + (got?' collected':'') + (near?' in-range':'');
+    const pinCls = 'poi-pin' + (got?' collected':'') + (near?' in-range':'') + ((!got && S.wish.has(p.id))?' wish':'');
     const wrapCls = 'poi-wrap' + ((zoomed && landmark) ? ' lbl-on' : '');
 
     if(S.marks[p.id]){
@@ -699,8 +701,230 @@ function cooldownLeft(poiId){
   return Math.max(0, COOLDOWN - (Date.now()-last));
 }
 
+/* ---------- Scratch-off world map ----------
+   Ink-black world, white borders. A country unlocks when you collect your
+   first stamp inside it; rub it with a finger to reveal it in green.
+   Tiny island nations render as scratchable dots (Mauritius matters). */
+const W = {
+  geo:null, byIso:{}, feats:[],
+  cvs:null, ctx:null, w:0, h:0, dpr:1,
+  latMax:84, latMin:-58,
+  scratched:new Set(), unlocked:new Set(),
+  active:null, strokes:[], samples:{}, centroid:{}, bboxPx:{},
+};
+
+async function worldLoad(){
+  try{
+    const r = await fetchT('vendor/world.json', null, 20000);
+    W.geo = await r.json();
+    W.feats = W.geo.features.filter(f=>f.id!=='ATA');
+    W.feats.forEach(f=> W.byIso[f.id]=f);
+  }catch(e){ W.geo = null; }
+  const m = (await DB.all('meta')).find(x=>x.k==='scratched');
+  W.scratched = new Set(m ? m.v : []);
+  worldRender();
+}
+
+function worldProj(lat,lng){
+  return [ (lng+180)/360*W.w, (W.latMax-Math.min(W.latMax,Math.max(W.latMin,lat)))/(W.latMax-W.latMin)*W.h ];
+}
+
+function pipRing(x,y,ring){
+  let inside=false;
+  for(let i=0,jx=ring.length-1;i<ring.length;jx=i++){
+    const [xi,yi]=ring[i], [xj,yj]=ring[jx];
+    if(((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+function pipFeature(f, lng, lat){
+  const g=f.geometry;
+  const polys = g.type==='Polygon' ? [g.coordinates] : g.coordinates;
+  for(const poly of polys){
+    if(pipRing(lng,lat,poly[0])){
+      let hole=false;
+      for(let i=1;i<poly.length;i++) if(pipRing(lng,lat,poly[i])){ hole=true; break; }
+      if(!hole) return true;
+    }
+  }
+  return false;
+}
+function countryOf(lat,lng){
+  if(!W.geo) return null;
+  for(const f of W.feats) if(pipFeature(f,lng,lat)) return f.id;
+  return null;
+}
+
+/* Which countries hold at least one of my stamps? */
+function worldUnlocked(){
+  const out=new Set();
+  for(const s of S.stamps){
+    if(s._iso===undefined){
+      const p=S.pois.find(x=>x.id===s.poi);
+      s._iso = p ? countryOf(p.lat,p.lng) : null;
+    }
+    if(s._iso) out.add(s._iso);
+  }
+  return out;
+}
+
+function featPath(ctx,f,dot){
+  if(dot){
+    const [cx,cy]=W.centroid[f.id];
+    ctx.beginPath(); ctx.arc(cx,cy,9,0,Math.PI*2);
+    return;
+  }
+  ctx.beginPath();
+  const g=f.geometry;
+  const polys=g.type==='Polygon'?[g.coordinates]:g.coordinates;
+  for(const poly of polys) for(const ring of poly){
+    ring.forEach(([lng,lat],i)=>{
+      const [x,y]=worldProj(lat,lng);
+      i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+    });
+    ctx.closePath();
+  }
+}
+
+function worldPrep(f){
+  // pixel bbox + centroid + dot decision, cached per feature
+  if(W.bboxPx[f.id]) return W.bboxPx[f.id];
+  let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
+  const g=f.geometry, polys=g.type==='Polygon'?[g.coordinates]:g.coordinates;
+  for(const poly of polys) for(const [lng,lat] of poly[0]){
+    const [x,y]=worldProj(lat,lng);
+    if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y;
+  }
+  const diag=Math.hypot(maxX-minX,maxY-minY);
+  W.centroid[f.id]=[(minX+maxX)/2,(minY+maxY)/2];
+  return W.bboxPx[f.id]={minX,minY,maxX,maxY,diag,dot:diag<16};
+}
+
+function worldRender(){
+  const cvs=document.getElementById('worldmap');
+  if(!cvs || !W.geo) return;
+  const cssW = cvs.parentElement.clientWidth-20;
+  if(cssW<50) return;
+  W.dpr = Math.min(2, window.devicePixelRatio||1);
+  W.w = cssW; W.h = Math.round(cssW*0.42);
+  cvs.width = W.w*W.dpr; cvs.height = W.h*W.dpr;
+  cvs.style.height = W.h+'px';
+  W.cvs=cvs; W.ctx=cvs.getContext('2d');
+  const x=W.ctx; x.setTransform(W.dpr,0,0,W.dpr,0,0);
+  W.bboxPx={}; W.centroid={};
+
+  W.unlocked = worldUnlocked();
+
+  x.fillStyle='#141B18'; x.fillRect(0,0,W.w,W.h);
+  for(const f of W.feats){
+    const bp=worldPrep(f);
+    const done=W.scratched.has(f.id);
+    const open=W.unlocked.has(f.id)&&!done;
+    featPath(x,f,bp.dot);
+    if(done){ x.fillStyle='#00AA6C'; x.fill(); x.strokeStyle='#34E0A1'; x.lineWidth=.8; x.stroke(); }
+    else{
+      x.fillStyle='#0C110F'; x.fill();
+      x.strokeStyle=open?'#34E0A1':'rgba(255,255,255,.55)';
+      x.lineWidth=open?1.4:.55; x.stroke();
+    }
+  }
+
+  const cap=document.getElementById('world-cap');
+  if(cap){
+    const pend=[...W.unlocked].filter(i=>!W.scratched.has(i));
+    cap.innerHTML = pend.length
+      ? `Scratch to reveal: <b>${esc(pend.map(i=>W.byIso[i].properties.name).join(', '))}</b>`
+      : `Your world · <b>${W.scratched.size}</b> ${W.scratched.size===1?'country':'countries'} revealed`;
+  }
+
+  if(!cvs._wired){
+    cvs._wired=true;
+    cvs.addEventListener('pointerdown', worldDown);
+    cvs.addEventListener('pointermove', worldMove);
+    cvs.addEventListener('pointerup',   worldUp);
+    cvs.addEventListener('pointercancel', worldUp);
+  }
+}
+
+function worldXY(e){
+  const r=W.cvs.getBoundingClientRect();
+  return [e.clientX-r.left, e.clientY-r.top];
+}
+function worldDown(e){
+  if(!W.geo) return;
+  const [px,py]=worldXY(e);
+  // which unlocked, unscratched country is under the finger?
+  const lng = px/W.w*360-180;
+  const lat = W.latMax - py/W.h*(W.latMax-W.latMin);
+  for(const iso of W.unlocked){
+    if(W.scratched.has(iso)) continue;
+    const f=W.byIso[iso], bp=worldPrep(f);
+    const hit = bp.dot
+      ? Math.hypot(px-W.centroid[iso][0], py-W.centroid[iso][1])<16
+      : pipFeature(f,lng,lat);
+    if(hit){
+      W.active=iso; W.strokes=[];
+      if(!W.samples[iso]) W.samples[iso]=worldSamples(f,bp);
+      e.preventDefault();
+      try{ W.cvs.setPointerCapture(e.pointerId); }catch(err){ /* capture is a nicety, not a need */ }
+      return;
+    }
+  }
+}
+function worldSamples(f,bp){
+  // interior points to measure scratch coverage
+  if(bp.dot) return [W.centroid[f.id]];
+  const pts=[];
+  for(let t=0;t<400 && pts.length<90;t++){
+    const px=bp.minX+Math.random()*(bp.maxX-bp.minX);
+    const py=bp.minY+Math.random()*(bp.maxY-bp.minY);
+    const lng=px/W.w*360-180, lat=W.latMax-py/W.h*(W.latMax-W.latMin);
+    if(pipFeature(f,lng,lat)) pts.push([px,py]);
+  }
+  return pts.length?pts:[W.centroid[f.id]];
+}
+function worldMove(e){
+  if(!W.active) return;
+  e.preventDefault();
+  const [px,py]=worldXY(e);
+  W.strokes.push([px,py]);
+  // paint the rub, clipped to the country
+  const f=W.byIso[W.active], bp=worldPrep(f), x=W.ctx;
+  x.save();
+  featPath(x,f,bp.dot); x.clip();
+  x.strokeStyle='#00AA6C'; x.lineCap='round'; x.lineWidth=bp.dot?10:22;
+  const n=W.strokes.length;
+  if(n>1){
+    x.beginPath();
+    x.moveTo(...W.strokes[n-2]); x.lineTo(...W.strokes[n-1]); x.stroke();
+  }
+  x.restore();
+  if(n%6===0) buzz(4);
+  // coverage check
+  const pts=W.samples[W.active];
+  const R=bp.dot?14:24;
+  let cov=0;
+  for(const [sx,sy] of pts){
+    for(let i=Math.max(0,n-400);i<n;i++){
+      const [kx,ky]=W.strokes[i];
+      if((kx-sx)*(kx-sx)+(ky-sy)*(ky-sy) < R*R){ cov++; break; }
+    }
+  }
+  if(cov/pts.length >= .55) worldComplete();
+}
+async function worldComplete(){
+  const iso=W.active; W.active=null;
+  W.scratched.add(iso);
+  await DB.put('meta',{k:'scratched', v:[...W.scratched]});
+  buzz([30,60,30,60,140]);
+  toast(`Revealed: ${W.byIso[iso].properties.name}`);
+  worldRender();
+}
+function worldUp(){ W.active=null; }
+
 /* ---------- Passport ---------- */
 function paintBook(){
+  worldRender();
   const body=$('#book-body');
   if(!S.stamps.length){
     $('#book-sub').textContent='No entries';
@@ -746,6 +970,23 @@ function paintBook(){
     return `<div class="grp">${g}</div><div class="stamps">${tiles}</div>`;
   }).join('');
 
+  // Wish list: the places still waiting for you
+  const wishes = [...S.wish].map(id=>S.pois.find(p=>p.id===id)).filter(Boolean);
+  if(wishes.length){
+    body.innerHTML += `<div class="grp">Wish list</div>` + wishes.map(p=>{
+      const k=kindFor(p.name,p.cats);
+      const got=S.stamps.some(s=>s.poi===p.id);
+      return `<div class="sr" data-w="${p.id}" style="background:#fff;border-radius:12px;margin-bottom:8px;box-shadow:var(--shadow)">
+        <em>${k.gl}</em>
+        <div><b>${esc(p.name)}</b><small>${esc(p.region||'')}${got?' · collected ✓':''}</small></div>
+        <span style="color:var(--amber)">♥</span>
+      </div>`;
+    }).join('');
+    $$('#book-body .sr[data-w]').forEach(el=>{
+      el.onclick=()=>{ const p=S.pois.find(x=>x.id===el.dataset.w); if(p) flyToPlace(p); };
+    });
+  }
+
   $$('.stamp').forEach(el=>{
     el.onclick = ()=>{
       const p = S.pois.find(x=>x.id===el.dataset.poi);
@@ -783,7 +1024,10 @@ function openPlace(p){
   card(`
     <div class="grab"></div>
     <div class="hero" id="hero">${heroImg(p)}</div>
-    <div class="kicker">${p.region||'Unmapped'} · ${d===null?'':Math.round(d)+' m away'}</div>
+    <div class="wishrow">
+      <div class="kicker">${p.region||'Unmapped'} · ${d===null?'':Math.round(d)+' m away'}</div>
+      <button class="wishbtn ${S.wish.has(p.id)?'on':''}" id="wish-${p.id}" onclick="toggleWish('${p.id}')">${S.wish.has(p.id)?'♥ Saved':'♡ Wish list'}</button>
+    </div>
     <h2>${esc(p.name)}</h2>
     ${p.blurb?`<p style="font-size:13.5px;line-height:1.6;color:var(--grey);margin:10px 0 6px">${esc(p.blurb)}</p>`:''}
     <div id="about" class="about"></div>
@@ -1750,6 +1994,15 @@ async function removePlace(id){
   toast('Place removed');
 }
 
+/* Wish list: places you want to get to. */
+async function toggleWish(id){
+  if(S.wish.has(id)) S.wish.delete(id); else S.wish.add(id);
+  await DB.put('meta',{k:'wish', v:[...S.wish]});
+  const b=document.getElementById('wish-'+id);
+  if(b){ b.classList.toggle('on', S.wish.has(id)); b.textContent = S.wish.has(id)?'♥ Saved':'♡ Wish list'; }
+  paint();
+}
+
 /* Builder mode: unlock once, stays unlocked on this device until locked. */
 async function setBuilder(on){
   S.builderOk = on;
@@ -1974,6 +2227,7 @@ function go(id){
   $$('.view').forEach(v=>v.classList.toggle('active', v.id===id));
   $$('.nav button').forEach(b=>b.classList.toggle('on', b.dataset.go===id));
   if(id==='v-map' && S.map) setTimeout(()=>S.map.resize(),60);
+  if(id==='v-book') setTimeout(paintBook,40);   // canvas needs the view visible
 }
 function card(html){
   $('#card').innerHTML = html;
