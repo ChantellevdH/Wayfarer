@@ -7,6 +7,7 @@ const RANGE_M   = 60;        // metres you must be within to spin
 const COOLDOWN  = 20*60*60*1000; // 20h — so a daily habit never gets blocked by clock drift
 const SPIN_ARC  = 900;       // degrees of rotation to complete a spin
 const BUILDER_PIN = 'lemorne'; // builder mode password — change it here
+const APP_VER = 'v23';
 
 /* ---------- Regions you can pre-cache ---------- */
 const REGIONS = [
@@ -347,6 +348,7 @@ async function boot(){
   catch(e){ S.map=null; toast('Map unavailable — collecting still works'); }
 
   bindNav();
+  const vr=document.getElementById('ver'); if(vr) vr.textContent = 'Wayfarer '+APP_VER;
   updateBuilderRow();
   drawRegions();
   paint();
@@ -714,12 +716,15 @@ const W = {
 };
 
 async function worldLoad(){
+  if(W.loading) return;
+  W.loading = true;
   try{
     const r = await fetchT('vendor/world.json', null, 20000);
     W.geo = await r.json();
     W.feats = W.geo.features.filter(f=>f.id!=='ATA');
     W.feats.forEach(f=> W.byIso[f.id]=f);
   }catch(e){ W.geo = null; }
+  W.loading = false;
   const m = (await DB.all('meta')).find(x=>x.k==='scratched');
   W.scratched = new Set(m ? m.v : []);
   worldRender();
@@ -802,7 +807,12 @@ function worldPrep(f){
 
 function worldRender(){
   const cvs=document.getElementById('worldmap');
-  if(!cvs || !W.geo) return;
+  if(!cvs) return;
+  if(!W.geo){
+    const cap=document.getElementById('world-cap');
+    if(cap) cap.textContent = W.loading ? 'Loading world map…' : 'World map data missing — check vendor/world.json is uploaded';
+    return;
+  }
   const cssW = cvs.parentElement.clientWidth-20;
   if(cssW<50) return;
   W.dpr = Math.min(2, window.devicePixelRatio||1);
@@ -924,6 +934,7 @@ function worldUp(){ W.active=null; }
 
 /* ---------- Passport ---------- */
 function paintBook(){
+  if(!W.geo && !W.loading) worldLoad();   // retry if the data failed earlier
   worldRender();
   const body=$('#book-body');
   if(!S.stamps.length){
