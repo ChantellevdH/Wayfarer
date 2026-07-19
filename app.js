@@ -19,8 +19,10 @@ const REGIONS = [
   {id:'centurion', name:'Centurion & Pretoria West', icon:'🏏', bbox:[-25.95,28.00,-25.70,28.20], z:[10,11,12,13,14]},
   {id:'pta',  name:'Pretoria East',        icon:'🌳', bbox:[-25.92,28.15,-25.72,28.35], z:[10,11,12,13,14]},
   {id:'cpt',  name:'Cape Town',            icon:'⛰',  bbox:[-34.10,18.30,-33.75,18.75], z:[10,11,12,13,14]},
-  {id:'randstad', name:'Randstad (Netherlands)', icon:'🌷', bbox:[51.80,3.90,52.50,5.20], z:[9,10,11,12,13]},
-  {id:'dfw',  name:'Dallas–Fort Worth (TX)', icon:'🤠', bbox:[32.55,-97.55,33.10,-96.45], z:[9,10,11,12,13]},
+  {id:'kampen', name:'Kampen & Zwolle (NL)',  icon:'🌷', bbox:[52.40,5.70,52.70,6.20], z:[10,11,12,13,14]},
+  {id:'randstad', name:'Randstad (Netherlands)', icon:'🚲', bbox:[51.80,3.90,52.50,5.20], z:[9,10,11,12,13]},
+  {id:'fw',   name:'Fort Worth (TX)',       icon:'🤠', bbox:[32.55,-97.75,32.95,-97.15], z:[10,11,12,13,14]},
+  {id:'dfw',  name:'Dallas–Fort Worth (TX)', icon:'🐂', bbox:[32.55,-97.55,33.10,-96.45], z:[9,10,11,12,13]},
   {id:'houston', name:'Houston (TX)',      icon:'🚀', bbox:[29.50,-95.75,30.10,-95.00], z:[9,10,11,12,13,14]},
   {id:'austin', name:'Austin (TX)',        icon:'🎸', bbox:[30.10,-98.05,30.55,-97.55], z:[10,11,12,13,14]},
 ];
@@ -64,6 +66,9 @@ const KINDS = [
 ];
 
 function kindFor(name, cats){
+  // An explicit choice (builder-set) outranks any keyword in the name.
+  const fx = (cats||[]).find(c=>String(c).startsWith('cat:'));
+  if(fx){ const k = KINDS.find(k=>k.cat===fx.slice(4)); if(k) return k; }
   const hay = (name+' '+(cats||[]).join(' '));
   return KINDS.find(k=>k.test.test(hay)) || KINDS[KINDS.length-1];
 }
@@ -298,7 +303,7 @@ async function boot(){
   {
     const rank = id => id.startsWith('seed-')?0 : id.startsWith('user-')?1 : /^Q/.test(id)?2 : id.startsWith('osm-node')?3 : 4;
     const byName = {};
-    S.pois.forEach(p=>{ const k=p.name.toLowerCase().trim(); (byName[k]=byName[k]||[]).push(p); });
+    S.pois.forEach(p=>{ const k=normName(p.name); (byName[k]=byName[k]||[]).push(p); });
     for(const group of Object.values(byName)){
       if(group.length<2) continue;
       group.sort((x,y)=>rank(x.id)-rank(y.id));
@@ -758,9 +763,11 @@ function openPlace(p){
     <div id="about" class="about"></div>
     ${mine.length?`<div class="kicker" style="margin-bottom:10px">Visited ${mine.length}× · ${mine.filter(s=>s.tier==='rare').length} rare</div>`:''}
     ${action}
-    ${S.builderOk?(p.id.startsWith('user-')
-        ?`<button class="btn ghost" onclick="removePlace('${p.id}')">Remove this place (builder)</button>`
-        :`<button class="btn ghost" onclick="hidePlace('${p.id}')">Hide this place (builder)</button>`):''}
+    ${S.builderOk?`<div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn ghost" style="flex:1" onclick="editPlace('${p.id}')">Edit</button>
+        <button class="btn ghost" style="flex:1" onclick="startMove('${p.id}')">Move pin</button>
+        <button class="btn ghost" style="flex:1" onclick="${p.id.startsWith('user-')?`removePlace('${p.id}')`:`hidePlace('${p.id}')`}">Delete</button>
+      </div>`:''}
     ${logs.length?`<div class="grp" style="margin-top:24px">Dispatches</div>
       ${logs.map(l=>`<div class="disp">
         <time>${fmtDate(l.ts)}</time>
@@ -1099,13 +1106,17 @@ async function cacheRegion(id){
     let pois = mergePOIs(seedFor(r), wiki, osm).filter(p=>!S.hidden.has(p.id));
     if(!pois.length){ toast('No places found'); return; }
 
+    // Never let a Refresh overwrite a place the builder has edited.
+    const editedIds = new Set(S.pois.filter(q=>q.edited).map(q=>q.id));
+    pois = pois.filter(p=>!editedIds.has(p.id));
+
     // Cross-run dedupe: this region may overlap one cached earlier. Same
     // name within 150 m of an existing place is the same place — keep the
     // better anchor (a point beats an area outline).
     const kept=[];
     for(const p of pois){
       const dup = S.pois.find(q=> q.id!==p.id
-        && q.name.toLowerCase().trim()===p.name.toLowerCase().trim()
+        && normName(q.name)===normName(p.name)
         && metres(p.lat,p.lng,q.lat,q.lng) < 150);
       if(!dup){ kept.push(p); continue; }
       const pIsNode = p.id.startsWith('osm-node'), dupProtected = /^(seed-|user-|Q)/.test(dup.id);
@@ -1240,13 +1251,19 @@ function osmBlurb(t){
   return '';
 }
 
+/* "Monte Casino" and "Montecasino" are the same place: compare names with
+   case, spaces, punctuation, and accents stripped. */
+function normName(s){
+  return String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+}
+
 /* Merge sources: seeds are truth, Wikidata adds notability, OSM adds density.
    Dedupe by name, then thin out anything within 30 m of a kept place so the
    map does not stack five pins on one corner. */
 function mergePOIs(seeds, wiki, osm){
   const out=[], names=new Set();
   const keep = p=>{
-    const nm = p.name.toLowerCase().trim();
+    const nm = normName(p.name);
     if(names.has(nm)) return;
     for(const q of out){
       if(metres(p.lat,p.lng,q.lat,q.lng) < 30) return;
@@ -1392,9 +1409,11 @@ function showLegend(){
 /* ---------- Builder mode: place a POI by hand ---------- */
 function startPlacing(){
   if(!S.map){ toast('Map unavailable'); return; }
+  S.moveTarget = null;
   document.body.classList.add('placing');
   $('#crosshair').hidden = false;
   $('#placebar').hidden = false;
+  $('.placebar-txt').textContent = 'Move the map until the pin sits exactly on the spot';
   if(S.me) S.map.easeTo({center:[S.me.lng,S.me.lat], zoom:Math.max(S.map.getZoom(),17), duration:500});
   $('#placeCancel').onclick = stopPlacing;
   $('#placeHere').onclick = ()=>{
@@ -1458,7 +1477,7 @@ function placeForm(lat, lng){
       id:'user-'+uid(), name, lat, lng,
       blurb: $('#pf-blurb').value.trim(),
       region: rgn ? rgn.name : 'My places',
-      cats: [kindKeyword(k)],
+      cats: ['cat:'+k.cat],
       url: link || undefined,
     };
     await DB.put('poi', p);
@@ -1491,6 +1510,71 @@ async function hidePlace(id){
   if(S.marks[id]){ S.marks[id].remove(); delete S.marks[id]; }
   shut(); paint();
   toast('Place hidden');
+}
+
+/* Builder: edit any place's name, type, description, or link. Edits are
+   flagged so a region Refresh cannot overwrite them. */
+function editPlace(id){
+  const p = S.pois.find(x=>x.id===id); if(!p) return;
+  const cur = kindFor(p.name, p.cats).cat;
+  const kindOpts = KINDS.map((k,i)=>`<option value="${i}" ${k.cat===cur?'selected':''}>${k.gl} ${k.cat}</option>`).join('');
+  card(`
+    <div class="grab"></div>
+    <div class="kicker">Builder edit</div>
+    <h2>Edit place</h2>
+    <div class="field"><label>Name</label>
+      <input type="text" id="ed-name" value="${esc(p.name)}"></div>
+    <div class="field"><label>Type</label>
+      <select id="ed-kind" style="width:100%;padding:12px;border:1.5px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);font-family:var(--body);font-size:16px">${kindOpts}</select></div>
+    <div class="field"><label>One line about it</label>
+      <input type="text" id="ed-blurb" value="${esc(p.blurb||'')}"></div>
+    <div class="field"><label>Link</label>
+      <input type="text" id="ed-url" value="${esc(p.url||'')}" placeholder="https://…"></div>
+    <button class="btn seal" id="ed-save">Save changes</button>
+    <button class="btn ghost" onclick="shut()">Cancel</button>
+  `);
+  $('#ed-save').onclick = async ()=>{
+    const name = $('#ed-name').value.trim();
+    if(name.length<3){ toast('Give it a name'); return; }
+    const k = KINDS[parseInt($('#ed-kind').value,10)] || KINDS[KINDS.length-1];
+    let url = $('#ed-url').value.trim();
+    if(url && !/^https?:\/\//i.test(url)) url = 'https://'+url;
+    p.name  = name;
+    p.blurb = $('#ed-blurb').value.trim();
+    p.url   = url || undefined;
+    p.cats  = ['cat:'+k.cat];
+    p.edited = true;
+    delete p.about;   // stale article may no longer match the corrected name
+    await DB.put('poi', p);
+    if(S.marks[p.id]){ S.marks[p.id].remove(); delete S.marks[p.id]; }
+    shut(); paint();
+    toast('Saved');
+  };
+}
+
+/* Builder: pick the pin up and put it where it belongs. */
+function startMove(id){
+  const p = S.pois.find(x=>x.id===id); if(!p || !S.map) return;
+  shut();
+  S.moveTarget = id;
+  document.body.classList.add('placing');
+  $('#crosshair').hidden = false;
+  $('#placebar').hidden = false;
+  $('.placebar-txt').textContent = `Move the map until the pin sits exactly where ${p.name} should be`;
+  S.map.easeTo({center:[p.lng,p.lat], zoom:Math.max(S.map.getZoom(),17), duration:500});
+  $('#placeCancel').onclick = ()=>{ S.moveTarget=null; stopPlacing(); };
+  $('#placeHere').onclick = async ()=>{
+    const c = S.map.getCenter();
+    const q = S.pois.find(x=>x.id===S.moveTarget);
+    S.moveTarget = null;
+    stopPlacing();
+    if(!q) return;
+    q.lat = c.lat; q.lng = c.lng; q.edited = true;
+    await DB.put('poi', q);
+    if(S.marks[q.id]){ S.marks[q.id].remove(); delete S.marks[q.id]; }
+    paint();
+    toast('Pin moved');
+  };
 }
 
 async function removePlace(id){
@@ -1580,7 +1664,7 @@ function importPlaces(){
       const lat = Number(raw.lat), lng = Number(raw.lng);
       if(name.length<3 || !isFinite(lat) || !isFinite(lng)
          || Math.abs(lat)>90 || Math.abs(lng)>180){ skipped++; continue; }
-      const dup = S.pois.find(q=> q.name.toLowerCase().trim()===name.toLowerCase()
+      const dup = S.pois.find(q=> normName(q.name)===normName(name)
          && metres(lat,lng,q.lat,q.lng) < 150);
       if(dup){ skipped++; continue; }
       const rgn = REGIONS.find(r=> lat>=r.bbox[0]&&lat<=r.bbox[2]&&lng>=r.bbox[1]&&lng<=r.bbox[3]);
