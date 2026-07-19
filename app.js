@@ -328,6 +328,7 @@ async function boot(){
     }
   }
 
+  S.builderOk = (await DB.all('meta')).some(m=>m.k==='builder' && m.v===true);
   S.queue  = await DB.all('queue');
   // The sync outbox has no server yet; stop it growing without bound.
   if(S.queue.length > 800){
@@ -344,6 +345,7 @@ async function boot(){
   catch(e){ S.map=null; toast('Map unavailable — collecting still works'); }
 
   bindNav();
+  updateBuilderRow();
   drawRegions();
   paint();
   netWatch();
@@ -720,20 +722,27 @@ function paintBook(){
   });
 
   body.innerHTML = Object.entries(grp).map(([g,list])=>{
-    // collapse repeats of same poi+tier into one tile with a count
-    const roll={};
+    // One tile per PLACE: the place is the stamp, the momento is the badge.
+    const byPoi={};
     list.forEach(s=>{
-      const k = s.poi+'|'+s.tier;
-      if(!roll[k]) roll[k]={...s,n:0};
-      roll[k].n++;
-      if(s.ts>roll[k].ts) roll[k].ts=s.ts;
+      const b = byPoi[s.poi] = byPoi[s.poi] || {poi:s.poi, n:0, rare:false, ts:0, gl:s.gl, fallback:s.name};
+      b.n++;
+      if(s.tier==='rare') b.rare = true;
+      if(s.ts>b.ts) b.ts = s.ts;
     });
-    const tiles = Object.values(roll).sort((a,b)=>b.ts-a.ts).map(s=>`
-      <div class="stamp ${s.tier}" data-poi="${s.poi}">
-        ${s.n>1?`<span class="ct">×${s.n}</span>`:''}
-        <span class="gl">${s.gl}</span>
-        <span class="nm">${s.name}</span>
-      </div>`).join('');
+    const tiles = Object.values(byPoi).sort((a,b)=>b.ts-a.ts).map(b=>{
+      const p   = S.pois.find(x=>x.id===b.poi);
+      const img = p ? bestImg(p) : null;
+      const nm  = p ? p.name : b.fallback;
+      return `<div class="stamp ${b.rare?'rare':''}" data-poi="${b.poi}">
+        ${img ? `<img src="${esc(img)}" alt="" loading="lazy" onerror="this.remove()">`
+              : `<span class="ph">${b.gl}</span>`}
+        <span class="shade"></span>
+        ${b.n>1?`<span class="ct">×${b.n}</span>`:''}
+        <span class="pnm">${esc(nm)}</span>
+        <span class="itm">${b.gl}</span>
+      </div>`;
+    }).join('');
     return `<div class="grp">${g}</div><div class="stamps">${tiles}</div>`;
   }).join('');
 
@@ -1562,6 +1571,7 @@ function placeForm(lat, lng){
       <label>Link (optional) — article or website to read about it</label>
       <input type="text" id="pf-url" placeholder="https://…">
     </div>
+    ${photoField(null)}
     ${S.builderOk ? '' : `<div class="field">
       <label>Builder password</label>
       <input type="text" id="pf-pin" placeholder="Password" autocomplete="off">
@@ -1569,6 +1579,8 @@ function placeForm(lat, lng){
     <button class="btn seal" id="pf-save">Save place</button>
     <button class="btn ghost" onclick="shut()">Cancel</button>
   `);
+  const photo = {img:null};
+  bindPhotoField(photo);
 
   $('#pf-save').onclick = async ()=>{
     const name = $('#pf-name').value.trim();
@@ -1576,7 +1588,7 @@ function placeForm(lat, lng){
     if(!S.builderOk){
       const pin = ($('#pf-pin')?.value||'').trim();
       if(pin !== BUILDER_PIN){ toast('Wrong builder password'); return; }
-      S.builderOk = true;   // remembered for this session
+      await setBuilder(true);
     }
     const k = KINDS[parseInt($('#pf-kind').value,10)] || KINDS[KINDS.length-1];
     const rgn = REGIONS.find(r=> lat>=r.bbox[0]&&lat<=r.bbox[2]&&lng>=r.bbox[1]&&lng<=r.bbox[3]);
@@ -1588,13 +1600,47 @@ function placeForm(lat, lng){
       region: rgn ? rgn.name : 'My places',
       cats: ['cat:'+k.cat],
       url: link || undefined,
+      img: photo.img || undefined,
     };
     await DB.put('poi', p);
-    await DB.put('queue', {id:uid(), kind:'poi', body:p});
+    await DB.put('queue', {id:uid(), kind:'poi', body:{...p, img:undefined}});
     S.pois.push(p);
     S.queue.push({id:uid(), kind:'poi', body:p});
     shut(); paint();
     toast('Place added');
+  };
+}
+
+/* Photo field for builder forms: tap to pick, downscaled for storage. */
+function photoField(existing){
+  return `<div class="field">
+    <label>Photo (optional) — shown as the place's hero image</label>
+    <input type="file" id="pp-file" accept="image/*" hidden>
+    <div class="shot" id="pp-shot">${existing?`<img src="${esc(existing)}" alt="">`:'Tap to add a photo'}</div>
+    ${existing?`<button type="button" class="btn ghost" id="pp-clear" style="margin-top:8px;padding:10px">Remove photo</button>`:''}
+  </div>`;
+}
+function bindPhotoField(state){
+  const f = $('#pp-file'), shot = $('#pp-shot'), clr = $('#pp-clear');
+  if(shot) shot.onclick = ()=> f.click();
+  if(clr) clr.onclick = ()=>{ state.img = null; state.cleared = true; shot.innerHTML = 'Tap to add a photo'; clr.remove(); };
+  if(f) f.onchange = e=>{
+    const file = e.target.files[0]; if(!file) return;
+    const r = new FileReader();
+    r.onload = ()=>{
+      const im = new Image();
+      im.onload = ()=>{
+        const c = document.createElement('canvas');
+        const sc = Math.min(1, 1000/Math.max(im.width, im.height));
+        c.width = im.width*sc; c.height = im.height*sc;
+        c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+        state.img = c.toDataURL('image/jpeg', .72);
+        state.cleared = false;
+        shot.innerHTML = `<img src="${state.img}" alt="">`;
+      };
+      im.src = r.result;
+    };
+    r.readAsDataURL(file);
   };
 }
 
@@ -1639,9 +1685,13 @@ function editPlace(id){
       <input type="text" id="ed-blurb" value="${esc(p.blurb||'')}"></div>
     <div class="field"><label>Link</label>
       <input type="text" id="ed-url" value="${esc(p.url||'')}" placeholder="https://…"></div>
+    ${photoField(bestImg(p))}
     <button class="btn seal" id="ed-save">Save changes</button>
     <button class="btn ghost" onclick="shut()">Cancel</button>
   `);
+  const photo = {img:null, cleared:false};
+  bindPhotoField(photo);
+  const oldName = p.name;
   $('#ed-save').onclick = async ()=>{
     const name = $('#ed-name').value.trim();
     if(name.length<3){ toast('Give it a name'); return; }
@@ -1653,7 +1703,9 @@ function editPlace(id){
     p.url   = url || undefined;
     p.cats  = ['cat:'+k.cat];
     p.edited = true;
-    delete p.about;   // stale article may no longer match the corrected name
+    if(photo.img) p.img = photo.img;
+    else if(photo.cleared){ delete p.img; if(p.about) delete p.about.thumb; }
+    if(name !== oldName) delete p.about;   // article may no longer match a renamed place
     await DB.put('poi', p);
     if(S.marks[p.id]){ S.marks[p.id].remove(); delete S.marks[p.id]; }
     shut(); paint();
@@ -1696,6 +1748,38 @@ async function removePlace(id){
   if(S.marks[id]){ S.marks[id].remove(); delete S.marks[id]; }
   shut(); paint();
   toast('Place removed');
+}
+
+/* Builder mode: unlock once, stays unlocked on this device until locked. */
+async function setBuilder(on){
+  S.builderOk = on;
+  if(on) await DB.put('meta',{k:'builder', v:true});
+  else   await DB.del('meta','builder');
+  updateBuilderRow();
+}
+function updateBuilderRow(){
+  const t = document.getElementById('bmode-t'), b = document.getElementById('bmode-b');
+  if(!t || !b) return;
+  t.textContent = S.builderOk ? 'Unlocked — edit any place from anywhere' : 'Locked';
+  b.textContent = S.builderOk ? 'Lock' : 'Unlock';
+}
+function toggleBuilder(){
+  if(S.builderOk){ setBuilder(false); toast('Builder mode locked'); return; }
+  card(`
+    <div class="grab"></div>
+    <div class="kicker">Builder mode</div>
+    <h2>Unlock builder tools</h2>
+    <div class="note">Unlocking adds Edit, Move pin, and Delete to every place sheet, from anywhere on the map. Stays unlocked on this device until you lock it.</div>
+    <div class="field"><label>Builder password</label>
+      <input type="text" id="bm-pin" placeholder="Password" autocomplete="off"></div>
+    <button class="btn seal" id="bm-go">Unlock</button>
+    <button class="btn ghost" onclick="shut()">Cancel</button>
+  `);
+  $('#bm-go').onclick = async ()=>{
+    if(($('#bm-pin').value||'').trim() !== BUILDER_PIN){ toast('Wrong builder password'); return; }
+    await setBuilder(true);
+    shut(); toast('Builder mode unlocked');
+  };
 }
 
 /* ---------- Cohort: share and import hand-placed POIs ----------
@@ -1759,7 +1843,7 @@ function importPlaces(){
   $('#im-go').onclick = async ()=>{
     if(!S.builderOk){
       if((($('#im-pin')||{}).value||'').trim() !== BUILDER_PIN){ toast('Wrong builder password'); return; }
-      S.builderOk = true;
+      await setBuilder(true);
     }
     let j;
     try{ j = JSON.parse($('#im-txt').value.trim()); }
