@@ -1,6 +1,6 @@
 /* Wayfarer service worker — offline app shell + map tile cache */
 
-const SHELL = 'wf-shell-v19';
+const SHELL = 'wf-shell-v20';
 const TILES = 'wf-tiles-v2';
 
 const CORE = [

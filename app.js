@@ -266,6 +266,13 @@ const $  = s=>document.querySelector(s);
 const $$ = s=>[...document.querySelectorAll(s)];
 const uid = ()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 
+/* fetch with a deadline — a hung request must never stall the app. */
+function fetchT(url, opts, ms){
+  const ctl = new AbortController();
+  const t = setTimeout(()=>ctl.abort(), ms||20000);
+  return fetch(url, {...(opts||{}), signal:ctl.signal}).finally(()=>clearTimeout(t));
+}
+
 function metres(a,b,c,d){
   const R=6371000, p=Math.PI/180;
   const dl=(c-a)*p, dg=(d-b)*p;
@@ -298,6 +305,9 @@ async function boot(){
     S.pois = S.pois.concat(fresh);
   }
 
+  S.stamps = await DB.all('stamp');
+  S.disps  = await DB.all('disp');
+
   // Clean up duplicate pairs left by earlier versions: same name, under
   // 150 m apart. Priority: seeds > user > Wikidata > OSM points > outlines.
   {
@@ -308,7 +318,9 @@ async function boot(){
       if(group.length<2) continue;
       group.sort((x,y)=>rank(x.id)-rank(y.id));
       for(let i=1;i<group.length;i++){
-        if(group.slice(0,i).some(kq=> metres(kq.lat,kq.lng,group[i].lat,group[i].lng)<150)){
+        const keeper = group.slice(0,i).find(kq=> metres(kq.lat,kq.lng,group[i].lat,group[i].lng)<150);
+        if(keeper){
+          await migrateStamps(group[i].id, keeper.id);
           await DB.del('poi', group[i].id);
           S.pois = S.pois.filter(x=>x.id!==group[i].id);
         }
@@ -316,9 +328,13 @@ async function boot(){
     }
   }
 
-  S.stamps = await DB.all('stamp');
-  S.disps  = await DB.all('disp');
   S.queue  = await DB.all('queue');
+  // The sync outbox has no server yet; stop it growing without bound.
+  if(S.queue.length > 800){
+    const drop = S.queue.slice(0, S.queue.length-400);
+    for(const q of drop) await DB.del('queue', q.id);
+    S.queue = S.queue.slice(-400);
+  }
   const meta = await DB.all('meta');
   meta.filter(m=>m.k.startsWith('rgn:')).forEach(m=>S.cached[m.k.slice(4)]=m.v);
 
@@ -725,6 +741,7 @@ function paintBook(){
     el.onclick = ()=>{
       const p = S.pois.find(x=>x.id===el.dataset.poi);
       if(p) openPlace(p);
+      else toast('That place is no longer on the map — the stamp is yours to keep');
     };
   });
 }
@@ -798,7 +815,7 @@ async function commonsNearby(p){
   const u = 'https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch'
     + `&ggscoord=${p.lat}%7C${p.lng}&ggsradius=250&ggslimit=1&ggsnamespace=6`
     + '&prop=imageinfo&iiprop=url&iiurlwidth=640&format=json&origin=*';
-  const r = await fetch(u);
+  const r = await fetchT(u, null, 12000);
   if(!r.ok) return null;
   const j = await r.json();
   const pages = j.query && j.query.pages ? Object.values(j.query.pages) : [];
@@ -844,7 +861,7 @@ async function loadAbout(p){
 
   for(const t of cands){
     try{
-      const r = await fetch('https://en.wikipedia.org/api/rest_v1/page/summary/'+encodeURIComponent(t));
+      const r = await fetchT('https://en.wikipedia.org/api/rest_v1/page/summary/'+encodeURIComponent(t), null, 12000);
       if(!r.ok) continue;
       const j = await r.json();
       if(!j.extract || (j.type||'').includes('disambiguation')) continue;
@@ -1207,6 +1224,7 @@ async function cacheRegion(id, onProg){
       if(!dup){ kept.push(p); continue; }
       const pIsNode = p.id.startsWith('osm-node'), dupProtected = /^(seed-|user-|Q)/.test(dup.id);
       if(pIsNode && !dupProtected && !dup.id.startsWith('osm-node')){
+        await migrateStamps(dup.id, p.id);   // the survivor inherits history
         await DB.del('poi', dup.id);
         S.pois = S.pois.filter(x=>x.id!==dup.id);
         if(S.marks[dup.id]){ S.marks[dup.id].remove(); delete S.marks[dup.id]; }
@@ -1235,7 +1253,10 @@ async function cacheRegion(id, onProg){
 
     drawRegions();
     paint();
-    if(S.map) S.map.fitBounds([[r.bbox[1],r.bbox[0]],[r.bbox[3],r.bbox[2]]],{padding:40});
+    const calm = document.getElementById('v-map').classList.contains('active')
+      && !document.getElementById('scrim').classList.contains('open')
+      && !document.body.classList.contains('placing');
+    if(S.map && calm && !S.cacheQ.length) S.map.fitBounds([[r.bbox[1],r.bbox[0]],[r.bbox[3],r.bbox[2]]],{padding:40});
 
     if(!tilesOk) problems.push('map tiles failed');
     S.prog[id] = {phase:'done', pct:100,
@@ -1267,9 +1288,9 @@ out center 700;`;
   let res = null;
   for(const ep of eps){
     try{
-      res = await fetch(ep,{method:'POST',
+      res = await fetchT(ep,{method:'POST',
         headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        body:'data='+encodeURIComponent(q)});
+        body:'data='+encodeURIComponent(q)}, 100000);
       if(res.ok) break;
     }catch(e){ res = null; }
   }
@@ -1334,6 +1355,13 @@ function osmBlurb(t){
   return '';
 }
 
+/* When two records turn out to be the same real place, the survivor
+   inherits the deleted twin's stamps and dispatches. */
+async function migrateStamps(fromId, toId){
+  for(const s of S.stamps.filter(s=>s.poi===fromId)){ s.poi = toId; await DB.put('stamp', s); }
+  for(const x of S.disps.filter(x=>x.poi===fromId)){ x.poi = toId; await DB.put('disp',  x); }
+}
+
 /* "Monte Casino" and "Montecasino" are the same place: compare names with
    case, spaces, punctuation, and accents stripped. */
 function normName(s){
@@ -1383,7 +1411,7 @@ SELECT DISTINCT ?item ?itemLabel ?coord ?desc ?article ?website ?img WHERE {
 LIMIT 220`;
 
   const url = 'https://query.wikidata.org/sparql?format=json&query='+encodeURIComponent(q);
-  const res = await fetch(url,{headers:{'Accept':'application/sparql-results+json'}});
+  const res = await fetchT(url,{headers:{'Accept':'application/sparql-results+json'}}, 45000);
   const j   = await res.json();
 
   return j.results.bindings.map(b=>{
@@ -1419,7 +1447,7 @@ async function cacheTiles(r, onProg){
 
   let tjRes = null;
   for(let i=0;i<3 && !(tjRes && tjRes.ok);i++){
-    try{ tjRes = await fetch(OFM_TILEJSON, {cache:'reload'}); }catch(e){ tjRes = null; }
+    try{ tjRes = await fetchT(OFM_TILEJSON, {cache:'reload'}, 15000); }catch(e){ tjRes = null; }
     if(!(tjRes && tjRes.ok)) await new Promise(r=>setTimeout(r,800));
   }
   if(!tjRes || !tjRes.ok) throw new Error('tilejson unavailable');
@@ -1444,7 +1472,7 @@ async function cacheTiles(r, onProg){
   let done=0;
   for(let i=0;i<cap.length;i+=14){
     await Promise.all(cap.slice(i,i+14).map(u=>
-      fetch(u).then(res=>{ if(res.ok) return cache.put(u,res); }).catch(()=>{})
+      fetchT(u, null, 20000).then(res=>{ if(res.ok) return cache.put(u,res); }).catch(()=>{})
     ));
     done+=14;
     if(onProg) onProg(Math.min(100, Math.round(done/cap.length*100)));
@@ -1551,8 +1579,6 @@ function placeForm(lat, lng){
       S.builderOk = true;   // remembered for this session
     }
     const k = KINDS[parseInt($('#pf-kind').value,10)] || KINDS[KINDS.length-1];
-    // Force the chosen category by prefixing a keyword its matcher recognises —
-    // the name shown everywhere stays clean via the cats array instead.
     const rgn = REGIONS.find(r=> lat>=r.bbox[0]&&lat<=r.bbox[2]&&lng>=r.bbox[1]&&lng<=r.bbox[3]);
     let link = $('#pf-url').value.trim();
     if(link && !/^https?:\/\//i.test(link)) link = 'https://'+link;
@@ -1856,6 +1882,7 @@ function bindNav(){
   $('#wipe').onclick = async()=>{
     if(!confirm('Erase every stamp, dispatch, and cached place on this device?')) return;
     await DB.clear();
+    try{ for(const k of await caches.keys()) await caches.delete(k); }catch(e){}
     location.reload();
   };
 }
