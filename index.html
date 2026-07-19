@@ -190,6 +190,48 @@ body.placing .near,body.placing .strip{display:none}
 .strip.ready{color:var(--green);}
 .strip.ready .led{background:var(--green-bright);animation:beacon 1.6s infinite}
 
+/* ---------- Search ---------- */
+.searchwrap{position:relative;z-index:640;margin:8px 14px 0}
+.search{
+  width:100%;padding:11px 16px;border:none;border-radius:999px;
+  background:#fff;box-shadow:var(--shadow);
+  font-family:var(--body);font-size:16px;color:var(--ink);
+}
+.search:focus{outline:2px solid var(--green)}
+.sres{
+  position:absolute;left:0;right:0;top:calc(100% + 6px);
+  background:#fff;border-radius:var(--r);box-shadow:var(--shadow-lg);
+  overflow:hidden;max-height:46vh;overflow-y:auto;
+}
+.sres[hidden]{display:none}
+.sr{
+  display:flex;align-items:center;gap:11px;padding:11px 14px;cursor:pointer;
+  border-bottom:1px solid var(--line);
+}
+.sr:last-child{border-bottom:none}
+.sr:active{background:var(--bg-soft)}
+.sr em{font-style:normal;font-size:16px;flex:none}
+.sr div{flex:1;min-width:0}
+.sr b{display:block;font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sr small{font-size:11px;color:var(--grey)}
+.sr .tick{color:var(--green);font-weight:700;flex:none}
+body.placing .searchwrap{display:none}
+
+/* region download progress */
+.rprog{
+  height:5px;border-radius:3px;background:var(--line);
+  overflow:hidden;margin-top:7px;
+}
+.rprog i{
+  display:block;height:100%;border-radius:3px;background:var(--green);
+  transition:width .3s linear;
+}
+.rprog.pulse i{
+  width:38%!important;
+  animation:slide 1.1s ease-in-out infinite;
+}
+@keyframes slide{0%{margin-left:-38%}100%{margin-left:100%}}
+
 /* ---------- Nearby drawer ---------- */
 .near{
   position:relative;z-index:600;margin:auto 14px 10px;
@@ -565,6 +607,10 @@ body.placing .near,body.placing .strip{display:none}
       <div class="stat"><b id="k-place">0</b><i>Places</i></div>
     </div>
     <div class="strip" id="strip"><span class="led"></span><span id="strip-t">Locating…</span></div>
+    <div class="searchwrap" id="searchwrap">
+      <input id="srch" class="search" type="search" placeholder="Search places" autocomplete="off" autocorrect="off">
+      <div id="sres" class="sres" hidden></div>
+    </div>
     <button class="fab" id="addPoi" aria-label="Add place">✚</button>
     <button class="fab" id="legendBtn" aria-label="Legend">❖</button>
     <button class="fab" id="locate" aria-label="Recentre">◉</button>

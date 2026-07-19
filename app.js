@@ -258,7 +258,7 @@ const DB = {
 const S = {
   pois:[], stamps:[], disps:[], queue:[],
   me:null, map:null, meMark:null, marks:{}, cached:{},
-  spinning:false, nearOpen:null, hidden:new Set(),
+  spinning:false, nearOpen:null, hidden:new Set(), cacheQ:[], cacheRunning:false, prog:{},
 };
 
 /* ---------- Utils ---------- */
@@ -1072,25 +1072,111 @@ function award(p,k,viaDispatch,disp){
 /* ---------- Region caching ---------- */
 function drawRegions(){
   $('#regions').innerHTML = REGIONS.map(r=>{
-    const c = S.cached[r.id];
-    return `<div class="row">
+    const c  = S.cached[r.id];
+    const st = S.prog[r.id];
+    const busy = st && ['queued','places','tiles'].includes(st.phase);
+    const inR = S.pois.filter(p=> p.lat>=r.bbox[0]&&p.lat<=r.bbox[2]&&p.lng>=r.bbox[1]&&p.lng<=r.bbox[3]).length;
+    let sub;
+    if(busy) sub = progText(r.id);
+    else if(st && st.phase==='done' && st.note) sub = `${inR} places · ${st.note}`;
+    else if(c) sub = `${inR} places · cached ${fmtDate(c.ts)} · tap to browse`;
+    else sub = inR ? `${inR} places · not cached — tap to browse` : 'Not cached';
+    return `<div class="row" data-r="${r.id}" onclick="regionPlaces('${r.id}')" style="cursor:pointer">
       <em>${r.icon}</em>
       <div>
         <b>${r.name}</b>
-        <small>${c?`${c.n} places · cached ${fmtDate(c.ts)}`:'Not cached'}</small>
+        <small>${sub}</small>
+        ${busy?`<div class="rprog ${st.phase==='places'?'pulse':''}"><i style="width:${st.phase==='places'?38:st.pct}%"></i></div>`:''}
       </div>
-      <button class="btn" style="width:auto;margin:0;padding:9px 13px"
-        onclick="cacheRegion('${r.id}')">${c?'Refresh':'Cache'}</button>
+      <button class="btn" style="width:auto;margin:0;padding:9px 13px" ${busy?'disabled':''}
+        onclick="event.stopPropagation();queueRegion('${r.id}')">${busy?'…':(c?'Refresh':'Cache')}</button>
     </div>`;
   }).join('');
 }
 
-async function cacheRegion(id){
-  const r = REGIONS.find(x=>x.id===id);
+/* Browse the POIs inside a region, tap one to fly there. */
+function regionPlaces(id){
+  const r = REGIONS.find(x=>x.id===id); if(!r) return;
+  const inR = S.pois
+    .filter(p=> p.lat>=r.bbox[0]&&p.lat<=r.bbox[2]&&p.lng>=r.bbox[1]&&p.lng<=r.bbox[3])
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  const MAX = 300;
+  const rows = inR.slice(0,MAX).map(p=>{
+    const k = kindFor(p.name,p.cats);
+    const got = S.stamps.some(s=>s.poi===p.id);
+    return `<div class="sr" data-p="${p.id}">
+      <em>${k.gl}</em>
+      <div><b>${esc(p.name)}</b><small>${k.cat}</small></div>
+      ${got?'<span class="tick">✓</span>':''}
+    </div>`;
+  }).join('');
+  card(`
+    <div class="grab"></div>
+    <div class="kicker">${r.icon} ${r.name}</div>
+    <h2>${inR.length} place${inR.length===1?'':'s'} here</h2>
+    ${inR.length? '' : `<div class="note">Nothing cached for this region yet. Tap Cache on the Sync page to pull its places.</div>`}
+    <div style="margin-top:10px">${rows}</div>
+    ${inR.length>MAX?`<p class="about-txt muted" style="margin-top:10px">…and ${inR.length-MAX} more. Use the map search to find a specific one.</p>`:''}
+    <button class="btn ghost" onclick="shut()">Close</button>
+  `);
+  $$('#card .sr').forEach(el=>{
+    el.onclick = ()=>{ const p=S.pois.find(x=>x.id===el.dataset.p); if(p) flyToPlace(p); };
+  });
+}
+
+function flyToPlace(p){
+  shut();
+  go('v-map');
+  if(S.map) S.map.easeTo({center:[p.lng,p.lat], zoom:Math.max(S.map.getZoom(),16), duration:600});
+  setTimeout(()=>openPlace(p), 650);
+}
+
+/* Tap as many regions as you like: they download one after another in tap
+   order, each row showing live progress. No babysitting required. */
+function queueRegion(id){
   if(!navigator.onLine){ toast('Need a connection to cache'); return; }
-  if(S.caching){ toast('Already caching — one region at a time'); return; }
-  S.caching = true;
-  toast(`Fetching ${r.name}…`);
+  const st = S.prog[id];
+  if(st && (st.phase==='queued' || st.phase==='places' || st.phase==='tiles')) return;
+  S.cacheQ.push(id);
+  S.prog[id] = {phase:'queued', pct:0};
+  drawRegions();
+  runCacheQ();
+}
+async function runCacheQ(){
+  if(S.cacheRunning) return;
+  S.cacheRunning = true;
+  while(S.cacheQ.length){
+    const id = S.cacheQ.shift();
+    try{ await cacheRegion(id, (phase,pct,note)=>{ S.prog[id]={phase,pct,note}; paintProg(id); }); }
+    catch(e){ S.prog[id]={phase:'error',pct:0}; }
+    drawRegions();
+  }
+  S.cacheRunning = false;
+  if(Object.values(S.prog).some(p=>p.phase==='done')) toast('Downloads finished');
+}
+function paintProg(id){
+  const bar = document.querySelector(`[data-r="${id}"] .rprog`);
+  const sm  = document.querySelector(`[data-r="${id}"] small`);
+  const st  = S.prog[id];
+  if(!bar || !st){ drawRegions(); return; }
+  bar.classList.toggle('pulse', st.phase==='places');
+  bar.firstElementChild.style.width = (st.phase==='places'?38:st.pct)+'%';
+  if(sm) sm.textContent = progText(id);
+}
+function progText(id){
+  const st = S.prog[id];
+  if(!st) return '';
+  if(st.phase==='queued') return 'Queued…';
+  if(st.phase==='places') return 'Fetching places…';
+  if(st.phase==='tiles')  return `Downloading map · ${st.pct}%`;
+  if(st.phase==='error')  return 'Failed — tap Cache to retry';
+  return '';
+}
+
+async function cacheRegion(id, onProg){
+  const r = REGIONS.find(x=>x.id===id);
+  onProg = onProg || (()=>{});
+  onProg('places', 0);
 
   try{
     const [wikiR, osmR] = await Promise.allSettled([fetchWikidata(r), fetchOSM(r)]);
@@ -1104,7 +1190,7 @@ async function cacheRegion(id){
     osm = osm.sort((x,y)=> (x.id.startsWith('osm-node')?0:1) - (y.id.startsWith('osm-node')?0:1));
 
     let pois = mergePOIs(seedFor(r), wiki, osm).filter(p=>!S.hidden.has(p.id));
-    if(!pois.length){ toast('No places found'); return; }
+    if(!pois.length){ S.prog[id]={phase:'done',pct:100,note:'No places found'}; return; }
 
     // Never let a Refresh overwrite a place the builder has edited.
     const editedIds = new Set(S.pois.filter(q=>q.edited).map(q=>q.id));
@@ -1128,7 +1214,7 @@ async function cacheRegion(id){
       } // otherwise the existing one stands; drop the incoming twin
     }
     pois = kept;
-    if(!pois.length){ toast(`${r.name}: nothing new`); return; }
+    if(!pois.length){ S.prog[id]={phase:'done',pct:100,note:'Nothing new'}; return; }
 
     await DB.putMany('poi',pois);
     // merge into memory
@@ -1143,22 +1229,19 @@ async function cacheRegion(id){
 
     // warm the tiles for this bbox so the map draws offline —
     // a tile failure must never mask the places that just saved.
-    toast(`${pois.length} places. Caching map…`);
+    onProg('tiles', 0);
     let tilesOk = true;
-    try{ await cacheTiles(r); }catch(e){ tilesOk = false; }
+    try{ await cacheTiles(r, pct=>onProg('tiles', pct)); }catch(e){ tilesOk = false; }
 
     drawRegions();
     paint();
     if(S.map) S.map.fitBounds([[r.bbox[1],r.bbox[0]],[r.bbox[3],r.bbox[2]]],{padding:40});
 
-    let msg = `${r.name}: ${pois.length} places saved`;
     if(!tilesOk) problems.push('map tiles failed');
-    msg += problems.length ? ` · ${problems.join(', ')} — Refresh to retry` : ' · ready offline';
-    toast(msg);
+    S.prog[id] = {phase:'done', pct:100,
+      note: problems.length ? `${problems.join(', ')} — Refresh to retry` : null};
   }catch(e){
-    toast('Caching failed — try again');
-  }finally{
-    S.caching = false;
+    S.prog[id] = {phase:'error', pct:0};
   }
 }
 
@@ -1331,7 +1414,7 @@ LIMIT 220`;
    the TileJSON at cache time and cache the TileJSON too — offline, the SW
    serves that same TileJSON so MapLibre asks for exactly the tiles we hold.
    Tiles stop at z14 and MapLibre over-zooms, so z14 covers every deeper zoom. */
-async function cacheTiles(r){
+async function cacheTiles(r, onProg){
   const cache = await caches.open('wf-tiles-v2');
 
   let tjRes = null;
@@ -1364,7 +1447,7 @@ async function cacheTiles(r){
       fetch(u).then(res=>{ if(res.ok) return cache.put(u,res); }).catch(()=>{})
     ));
     done+=14;
-    if(done%280===0) toast(`Map ${Math.min(100,Math.round(done/cap.length*100))}%`);
+    if(onProg) onProg(Math.min(100, Math.round(done/cap.length*100)));
   }
 }
 const lon2x=(l,z)=>Math.floor((l+180)/360*2**z);
@@ -1690,6 +1773,47 @@ function importPlaces(){
 /* ---------- Nav / modal ---------- */
 function bindNav(){
   $$('[data-go]').forEach(b=> b.onclick = ()=>go(b.dataset.go));
+
+  // Map search: entirely local, so it works offline like everything else.
+  const srch = document.getElementById('srch');
+  const sres = document.getElementById('sres');
+  const runSearch = ()=>{
+    const q = normName(srch.value);
+    if(q.length<2){ sres.hidden = true; sres.innerHTML=''; return; }
+    const hits = S.pois
+      .map(p=>({p, i:normName(p.name).indexOf(q)}))
+      .filter(x=>x.i>=0)
+      .sort((x,y)=> x.i-y.i || x.p.name.length-y.p.name.length)
+      .slice(0,8);
+    if(!hits.length){ sres.innerHTML = `<div class="sr"><div><b>No matches</b><small>Only cached places are searchable</small></div></div>`; sres.hidden=false; return; }
+    sres.innerHTML = hits.map(({p})=>{
+      const k = kindFor(p.name,p.cats);
+      const got = S.stamps.some(s=>s.poi===p.id);
+      return `<div class="sr" data-p="${p.id}">
+        <em>${k.gl}</em>
+        <div><b>${esc(p.name)}</b><small>${k.cat} · ${esc(p.region||'')}</small></div>
+        ${got?'<span class="tick">✓</span>':''}
+      </div>`;
+    }).join('');
+    sres.hidden = false;
+    $$('#sres .sr').forEach(el=>{
+      el.onpointerdown = e=>{
+        e.preventDefault();
+        const p = S.pois.find(x=>x.id===el.dataset.p);
+        srch.value=''; sres.hidden=true; srch.blur();
+        if(p) flyToPlace(p);
+      };
+    });
+  };
+  srch.addEventListener('input', runSearch);
+  srch.addEventListener('focus', runSearch);
+  srch.addEventListener('blur', ()=> setTimeout(()=>{ sres.hidden = true; }, 250));
+  srch.addEventListener('keydown', e=>{
+    if(e.key==='Enter'){
+      const first = sres.querySelector('.sr[data-p]');
+      if(first) first.onpointerdown(new Event('pointerdown'));
+    }
+  });
 
   // Swipe-down closes sheets, like every other bottom sheet on the phone.
   const cardEl = document.getElementById('card');
